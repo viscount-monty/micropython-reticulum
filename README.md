@@ -37,14 +37,30 @@ Firmware: `MicroPython v1.29.0 on 2026-08-24; Raspberry Pi Pico with RP2040`
   - When trying to copy the firmware files `mpremote cp -r firmware/ :`
     - This results in `firmware` as the root directory on the pico
     - Causes all imports (which are looking for a root directory `lib`) to fail
-  - Correct command:
-    - `mpremote cp -r firmware/. :`, (note the `.`)
-  - When corrected, it completes without error, but,
-  - Results in a silent out of space condition, as revealed by `mpremote df`:
+    - Correct command:
+      - `mpremote cp -r firmware/. :`, (note the `.`)
+    - When corrected, it completes without error, but,
+    - Results in a silent out of space condition, as revealed by `mpremote df`:
 
-    ```text
-    filesystem     size     used    avail use% mounted on
-    <VfsLfs2>   1441792  1495040   -53248  103 /
-    ```
+      ```text
+      filesystem     size     used    avail use% mounted on
+      <VfsLfs2>   1441792  1495040   -53248  103 /
+      ```
 
-  - Resolution: remove examples/libs not intended for pico
+    - Resolution: remove examples/libs not intended for pico
+
+  - Trying to run the example intended for the pico
+    - `mpremote` to enter REPL
+
+      ```text
+      Connected to MicroPython at /dev/ttyACM0
+      Use Ctrl-] or Ctrl-x to exit this shell
+      import example_proxy
+      Traceback (most recent call last):
+        File "<stdin>", line 1, in <module>
+        File "example_proxy.py", line 315, in <module>
+        File "example_proxy.py", line 251, in main
+        File "urns/__init__.py", line 12, in <module>
+      MemoryError: memory allocation failed, allocating 136 bytes
+      >>>
+      ```
