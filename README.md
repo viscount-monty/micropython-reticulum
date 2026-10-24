@@ -15,10 +15,10 @@ Firmware: `MicroPython v1.29.0 on 2026-08-24; Raspberry Pi Pico with RP2040`
 
 ## Detailed Objectives
 
-- [ ] Determine size in bytes of original `./firmware/` directory
+- [x] Determine size in bytes of original `./firmware/` directory
   - `du -sb firmware/`
     - `1116683 firmware/`
-- [ ] List free file system space on RP2040
+- [x] List free file system space on RP2040
   - `mpremote rm -r :.` to erase all files
   - `mpremote df` to show available storage
 
@@ -39,10 +39,8 @@ Firmware: `MicroPython v1.29.0 on 2026-08-24; Raspberry Pi Pico with RP2040`
     - Causes all imports (which are looking for a root directory `lib`) to fail
   - Correct command:
     - `mpremote cp -r firmware/. :`, (note the `.`)
-  - When the command is corrected, it results in either
-  - An out of space error
-    - `mpremote: cp: ././urns/__init__.py: No space left on device.`
-  - A silent out of space condition, as revealed by `mpremote df`:
+  - When corrected, it completes without error, but,
+  - Results in a silent out of space condition, as revealed by `mpremote df`:
 
     ```text
     filesystem     size     used    avail use% mounted on
