@@ -23,7 +23,7 @@ NODE_NAME = "CMF_ESP32s3"
 WEBREPL_PASSWORD = credentials.WEBREPL_PASSWORD
 
 # DEBUG levels: 0 = silent, 1 = messages & announces only, 2 = full debug
-DEBUG = 2
+DEBUG = 1
 
 
 # ---- Reticulum config ----
