@@ -13,8 +13,16 @@ Usage (MicroPython on ESP32-S3 / RP2040):
 from config import WIFI_SSID, WIFI_PASS, NODE_NAME, DEBUG, CONFIG
 
 import gc
+
 gc.collect()
 
+# gpio
+from machine import Pin
+
+# Define built-in LED for XIAO ESP32-S3
+led_user = Pin(21, Pin.OUT)
+# 1=OFF, 0=ON
+led_user.value(1)
 # ---- Peripherals ----
 # Uncomment the ones you have connected. Shared I2C bus for I2C devices.
 # IMPORTANT: I2C pins must NOT overlap with interface pins (E32 uses
@@ -35,6 +43,7 @@ gc.collect()
 # and self-disables if the board has no divider, so listing it is always safe —
 # it answers "battery"/"sensor" only when a battery is actually wired.
 import peripherals.adc_reader as adc_reader
+
 adc_reader.init_battery(CONFIG)
 
 # import peripherals.sds011_sensor as sds011_sensor
@@ -60,6 +69,7 @@ def _peer_name(router, dest_hash):
 async def _send_msg(router, dest_hash, body):
     """Send LXMF message as async task (crypto is slow)."""
     import uasyncio as asyncio
+
     await asyncio.sleep(0)
     try:
         msg = router.send_message(dest_hash, body)
@@ -128,9 +138,14 @@ async def send_echo_reply(router, source_hash, content):
                 print("[Echo] Replied to " + source_hash.hex()[:8])
         else:
             if DEBUG >= 1:
-                print("[Echo] Cannot reply to " + source_hash.hex()[:8] + " (unknown identity)")
+                print(
+                    "[Echo] Cannot reply to "
+                    + source_hash.hex()[:8]
+                    + " (unknown identity)"
+                )
     except Exception as e:
         from urns.log import log, LOG_ERROR
+
         log("Echo reply error: " + str(e), LOG_ERROR)
     gc.collect()
 
@@ -167,7 +182,7 @@ def connect_wifi(ssid, password, timeout=15):
     if platform == "esp32":
         wlan.config(pm=0)
     elif platform == "rp2":
-        wlan.config(pm=0xa11140)
+        wlan.config(pm=0xA11140)
 
     ip = wlan.ifconfig()[0]
     if DEBUG >= 1:
@@ -175,6 +190,7 @@ def connect_wifi(ssid, password, timeout=15):
 
     try:
         import ntptime
+
         ntptime.settime()
         if DEBUG >= 1:
             print("NTP synced")
@@ -187,6 +203,7 @@ def connect_wifi(ssid, password, timeout=15):
 
 def setup_node(rns, node_name):
     from urns.lxmf import LXMRouter
+
     router = LXMRouter(identity=rns.identity)
     dest = router.register_delivery_identity(rns.identity, display_name=node_name)
 
@@ -209,6 +226,12 @@ def setup_node(rns, node_name):
 
         if DEBUG >= 1:
             name = _peer_name(router, message.source_hash)
+            if content == "on":
+                led_user.value(0)
+                content = "[COMMAND] " + content
+            elif content == "off":
+                led_user.value(1)
+                content = "[COMMAND] " + content
             print()
             print("<" + name + "/" + sender + "> " + content)
 
@@ -222,7 +245,13 @@ def setup_node(rns, node_name):
     # Announce handler — see other LXMF peers
     def on_announce(destination_hash, display_name):
         if DEBUG >= 1:
-            print("[Peer] " + (display_name or "?") + " [" + destination_hash.hex()[:8] + "]")
+            print(
+                "[Peer] "
+                + (display_name or "?")
+                + " ["
+                + destination_hash.hex()[:8]
+                + "]"
+            )
 
     router.register_announce_callback(on_announce)
 
@@ -233,7 +262,8 @@ def needs_wifi(config):
     """Check if any UDP or TCP interface is enabled in config."""
     for iface in config.get("interfaces", []):
         if iface.get("enabled", False) and iface.get("type", "") in (
-            "UDPInterface", "TCPClientInterface",
+            "UDPInterface",
+            "TCPClientInterface",
         ):
             return True
     return False
