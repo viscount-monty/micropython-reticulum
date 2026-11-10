@@ -12,3 +12,4 @@ tools/webp_eval/
 tools/natmod/sf_probe/
 # editor backups
 \#*\#
+firmware/credentials.py

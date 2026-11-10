@@ -5,15 +5,22 @@ Edit this file to configure your node. Uncomment the interface(s) you need.
 """
 
 from lora_boards import LORA_BOARDS
+import credentials
 
 # ---- Node settings ----
-WIFI_SSID = "YOUR_WIFI_SSID"      # <- your WiFi network name
-WIFI_PASS = "YOUR_WIFI_PASSWORD"  # <- your WiFi password
-NODE_NAME = "ESP32s3"
+# Create a secrets.py file, ignored by git, with the following contents
+# WIFI_SSID = "YOUR_WIFI_SSID"  # <- your WiFi network name
+# WIFI_PASS = "YOUR_WIFI_PASSWORD"  # <- your WiFi password
+# IFAC_NETWORK_NAME = "YOUR_IFAC_NETWORK_NAME"
+# IFAC_PASSPHRASE = "YOUR_IFAC_PASSPHRASE"
+# WEBREPL_PASSWORD = "YOUR_WEBREPL_PASSWORD"
+WIFI_SSID = credentials.WIFI_SSID
+WIFI_PASS = credentials.WIFI_PASS
+NODE_NAME = "CMF_ESP32s3"
 
 # WebREPL login password (4-9 chars) for over-the-network control at
 # ws://<node-ip>:8266/  (started by boot.py). Change it from the default.
-WEBREPL_PASSWORD = "changeme"
+WEBREPL_PASSWORD = credentials.WEBREPL_PASSWORD
 
 # DEBUG levels: 0 = silent, 1 = messages & announces only, 2 = full debug
 DEBUG = 2
@@ -27,22 +34,19 @@ CONFIG = {
     # True = this node RELAYS for others (a transport router); False = leaf node.
     # The example you run decides the role: example_transport_router = pure relay,
     # example_node = LXMF inbox (and also relays if this is True).
-    "enable_transport": True,
-
+    "enable_transport": False,
     # LoRa board pinout presets (see firmware/lora_boards.py). An interface
     # below references one with "board": "<name>"; the preset's pins are merged
     # in at startup. Edit lora_boards.py to add a board — no other changes.
     "lora_boards": LORA_BOARDS,
-
     # Dedicated destination that replies to `rnprobe` (reference RNS tool).
     # Set "enabled": True to expose the probe destination. See README.
     "probe": {
         "enabled": False,
-        "app_name": "urns",            # full_name = "urns.probe"
+        "app_name": "urns",  # full_name = "urns.probe"
         "aspect": "probe",
         "announce_interval": 60 * 60,  # 1 hour; 0 = announce once at boot only
     },
-
     # ---- Time sync ----
     # Pure-LoRa nodes have no RTC or NTP, so their clock sits at 2000-01-01 and
     # every outgoing message/announce is stamped "Jan 2000". With time sync
@@ -64,25 +68,22 @@ CONFIG = {
         "trusted_nodes": [
             # "a1b2c3d4e5f60718293a4b5c6d7e8f90",   # e.g. your phone's MeshChat address
         ],
-        "min_sources": 2,      # corroboration quorum when trusted_nodes is empty
-        "tolerance": 120,      # seconds; max clock disagreement between peers
+        "min_sources": 2,  # corroboration quorum when trusted_nodes is empty
+        "tolerance": 120,  # seconds; max clock disagreement between peers
     },
-
     "interfaces": [
-
         # ---- WiFi UDP ----
         # Broadcasts on the local LAN. Works with MeshChat / Sideband.
         # Set forward_ip to None for auto-detected subnet broadcast.
-         # {
-         #     "type": "UDPInterface",
-         #     "name": "WiFi UDP",
-         #     "enabled": True,
-         #     "listen_ip": "0.0.0.0",
-         #     "listen_port": 4242,
-         #     "forward_ip": "255.255.255.255",
-         #     "forward_port": 4242,
-         # },
-
+        # {
+        #     "type": "UDPInterface",
+        #     "name": "WiFi UDP",
+        #     "enabled": True,
+        #     "listen_ip": "0.0.0.0",
+        #     "listen_port": 4242,
+        #     "forward_ip": "255.255.255.255",
+        #     "forward_port": 4242,
+        # },
         # ---- E32 LoRa (EByte E32-900T20) ----
         # Transparent serial LoRa with hex register config.
         # Both nodes must share channel and air_rate.
@@ -107,24 +108,23 @@ CONFIG = {
         # channel: freq = 862 + channel * 1MHz (E32-900T)
         #   6 = 868 MHz (EU ISM), 60 = 922 MHz (US ISM)
         #
-         # {
-         #     "type": "E32Interface",
-         #     "name": "LoRa E32",
-         #     "enabled": True,
-         #     "uart_id": 1,
-         #     "tx_pin": 4,
-         #     "rx_pin": 5,
-         #     "speed": 9600,
-         #     "m0_pin": 15,
-         #     "m1_pin": 2,
-         #     "aux_pin": 6,
-         #     "auto_configure": False,
-         #     "timeout": 3000,
-         #     "channel": 6,
-         #     "air_rate": 2,
-         #     "tx_power": 3,
-         # },
-
+        # {
+        #     "type": "E32Interface",
+        #     "name": "LoRa E32",
+        #     "enabled": True,
+        #     "uart_id": 1,
+        #     "tx_pin": 4,
+        #     "rx_pin": 5,
+        #     "speed": 9600,
+        #     "m0_pin": 15,
+        #     "m1_pin": 2,
+        #     "aux_pin": 6,
+        #     "auto_configure": False,
+        #     "timeout": 3000,
+        #     "channel": 6,
+        #     "air_rate": 2,
+        #     "tx_power": 3,
+        # },
         # ---- SX1262 SPI LoRa (micropython-lib lora-sx126x driver) ----
         # Install: mpremote mip install lora-sx126x
         #
@@ -149,10 +149,10 @@ CONFIG = {
         #
         {
             "type": "LoRaInterface",
-            "board": "xiao_esp32s3_sx1262",   # XIAO ESP32-S3 + Wio-SX1262 kit
+            "board": "xiao_esp32s3_sx1262",  # XIAO ESP32-S3 + Wio-SX1262 kit
             "name": "LoRa",
             "enabled": True,
-            "freq_khz": 868800,
+            "freq_khz": 915200,
             "sf": 8,
             "bw": "125",
             "coding_rate": 5,
@@ -160,19 +160,22 @@ CONFIG = {
             "preamble_len": 8,
             "crc_en": True,
             "syncword": 0x1424,
+            "networkname": credentials.IFAC_NETWORK_NAME,
+            "passphrase": credentials.IFAC_PASSPHRASE,
+            "ifac_size": 8,
         },
-
         # ---- TCP Client (the WiFi/IP side of a transport bridge) ----
         # Connects OUT to a remote RNS TCPServerInterface (rnsd / MeshChat on the
         # LAN, or a public transport node). HDLC-framed, wire-compatible with RNS.
         {
             "type": "TCPClientInterface",
             "name": "WiFi TCP",
-            "enabled": True,
-            "target_host": "192.168.1.10",   # <- your RNS TCP server IP / hostname
-            "target_port": 4243,
+            "enabled": False,
+            "target_host": "192.168.0.200",  # <- your RNS TCP server IP / hostname
+            "target_port": 4242,
+            "networkname": credentials.IFAC_NETWORK_NAME,
+            "passphrase": credentials.IFAC_PASSPHRASE,
         },
-
         # ---- Serial (for RNode / wired link) ----
         # {
         #     "type": "SerialInterface",
@@ -183,7 +186,6 @@ CONFIG = {
         #     "rx_pin": 16,
         #     "speed": 115200,
         # },
-
     ],
 }
 
