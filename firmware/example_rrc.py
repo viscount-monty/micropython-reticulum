@@ -51,7 +51,21 @@ from machine import Pin
 
 gc.collect()
 
-_BOOT_TIME = time.time()
+_ticks_ms = getattr(time, "ticks_ms", None) or (lambda: int(time.time() * 1000))
+_ticks_diff = getattr(time, "ticks_diff", None) or (lambda a, b: a - b)
+_UPTIME_LAST_MS = _ticks_ms()
+_UPTIME_TOTAL_MS = 0
+
+
+def _uptime_seconds():
+    """Monotonic uptime in seconds, immune to RTC/NTP/time_sync clock jumps."""
+    global _UPTIME_LAST_MS, _UPTIME_TOTAL_MS
+    now_ms = _ticks_ms()
+    delta = _ticks_diff(now_ms, _UPTIME_LAST_MS)
+    if delta > 0:
+        _UPTIME_TOTAL_MS += delta
+        _UPTIME_LAST_MS = now_ms
+    return _UPTIME_TOTAL_MS // 1000
 
 # RRC timestamps are Unix-epoch milliseconds. Bare-metal MicroPython ports
 # use a 2000-01-01 epoch for time.time()/gmtime(), so shift when needed.
@@ -674,7 +688,7 @@ class RRCClient:
         except Exception:
             pass
 
-        up_str = _fmt_uptime(time.time() - _BOOT_TIME)
+        up_str = _fmt_uptime(_uptime_seconds())
         return (
             "[ESP32-S3] %s (uPy %s) cpu=%s up=%s | mem: free=%dB alloc=%dB (%d%%) | fs=%s | temp=%s rst=%s"
             % (chip, fw_ver, freq_mhz, up_str, free_b, alloc_b, used_pct, fs_info, temp_str, rst_cause)
@@ -1101,6 +1115,7 @@ class RRCClient:
 
         while not self.closed:
             await asyncio.sleep(0.25)
+            _uptime_seconds()
             if not self.connected or self.link is None or self.link.status != 1:
                 continue
 
