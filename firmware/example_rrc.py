@@ -106,6 +106,14 @@ RX_SETTLE_DELAY = 0.5
 LED_PIN = 21
 LED_ACTIVE_LOW = True
 
+# 128x64 I2C OLED display (DPM128064w03-1 on XIAO ESP32-S3 I2C1_SDA=GPIO5, I2C1_SCL=GPIO6)
+OLED_ENABLED = True
+OLED_I2C_BUS = 1
+OLED_SDA_PIN = 5
+OLED_SCL_PIN = 6
+OLED_ADDR = 0x3C
+OLED_CONTROLLER = "sh1106"  # "sh1106" (col offset 2) or "ssd1306" (col offset 0)
+
 # ESP32-S3 valid GPIO range and system-reserved pins:
 #   19, 20: USB D-/D+ (native USB Serial/JTAG used by mpremote!)
 #   26..37: Internal SPI Flash / Octal PSRAM
@@ -265,6 +273,145 @@ def led_get():
 
 
 led_set(False)
+
+
+# ---- 128x64 I2C OLED display (SSD1306 / SH1106) ----
+
+
+class OLED128x64:
+    """Minimal framebuf-backed 128x64 I2C OLED driver (SH1106 & SSD1306)."""
+
+    def __init__(self, i2c, addr=0x3C, controller="sh1106"):
+        import framebuf
+
+        self.i2c = i2c
+        self.addr = addr
+        self.controller = controller.lower()
+        self.col_offset = 2 if self.controller == "sh1106" else 0
+        self.width = 128
+        self.height = 64
+        self.pages = 8
+        self.buffer = bytearray(self.pages * self.width)
+        self.fb = framebuf.FrameBuffer(self.buffer, self.width, self.height, framebuf.MONO_VLSB)
+        self._init_display()
+
+    def _cmd(self, c):
+        self.i2c.writeto(self.addr, bytes((0x80, c)))
+
+    def _init_display(self):
+        cmds = [
+            0xAE,        # display off
+            0xD5, 0x80,  # clock div
+            0xA8, 0x3F,  # multiplex 64
+            0xD3, 0x00,  # display offset 0
+            0x40,        # start line 0
+            0x8D, 0x14,  # charge pump on (SSD1306; ignored/benign on SH1106)
+            0xAD, 0x8B,  # internal DC-DC on (SH1106)
+        ]
+        if self.controller == "ssd1306":
+            cmds.extend([0x20, 0x02])  # page addressing mode
+        cmds.extend([
+            0xA1,        # segment remap
+            0xC8,        # COM scan dec
+            0xDA, 0x12,  # COM pins 128x64
+            0x81, 0xCF,  # contrast
+            0xD9, 0xF1,  # precharge
+            0xDB, 0x30,  # VCOMH deselect
+            0xA4,        # output follows RAM
+            0xA6,        # normal (not inverted)
+        ])
+        for c in cmds:
+            self._cmd(c)
+        self._clear_ram()
+        self._cmd(0xAF)  # display on
+
+    def _clear_ram(self):
+        cols = 132 if self.controller == "sh1106" else 128
+        blank = b"\x40" + (b"\x00" * cols)
+        for page in range(self.pages):
+            self._cmd(0xB0 | page)
+            self._cmd(0x00)
+            self._cmd(0x10)
+            self.i2c.writeto(self.addr, blank)
+
+    def fill(self, col):
+        self.fb.fill(col)
+
+    def text(self, s, x, y, col=1):
+        self.fb.text(str(s), x, y, col)
+
+    def hline(self, x, y, w, col=1):
+        self.fb.hline(x, y, w, col)
+
+    def show(self):
+        mv = memoryview(self.buffer)
+        col_lo = self.col_offset & 0x0F
+        col_hi = 0x10 | ((self.col_offset >> 4) & 0x0F)
+        for page in range(self.pages):
+            self._cmd(0xB0 | page)
+            self._cmd(col_lo)
+            self._cmd(col_hi)
+            start = page * self.width
+            self.i2c.writeto(self.addr, b"\x40" + bytes(mv[start : start + self.width]))
+
+
+_oled = None
+
+
+def init_oled():
+    global _oled
+    if not OLED_ENABLED:
+        return None
+    try:
+        from machine import I2C, SoftI2C
+
+        try:
+            i2c = I2C(OLED_I2C_BUS, sda=Pin(OLED_SDA_PIN), scl=Pin(OLED_SCL_PIN), freq=100000)
+        except Exception:
+            i2c = SoftI2C(scl=Pin(OLED_SCL_PIN), sda=Pin(OLED_SDA_PIN), freq=100000)
+
+        found = i2c.scan()
+        addr = OLED_ADDR
+        if addr not in found:
+            for cand in (0x3C, 0x3D):
+                if cand in found:
+                    addr = cand
+                    break
+        if addr not in found:
+            print("[OLED] No display found on I2C (SDA=%d SCL=%d scan=%s)" % (OLED_SDA_PIN, OLED_SCL_PIN, [hex(x) for x in found]))
+            return None
+
+        _oled = OLED128x64(i2c, addr=addr, controller=OLED_CONTROLLER)
+        print("[OLED] Initialized %s 128x64 at %s (SDA=%d SCL=%d)" % (OLED_CONTROLLER, hex(addr), OLED_SDA_PIN, OLED_SCL_PIN))
+        return _oled
+    except Exception as e:
+        print("[OLED] Init skipped: " + str(e))
+        _oled = None
+        return None
+
+
+def oled_show_lines(lines):
+    if _oled is None:
+        return
+    try:
+        _oled.fill(0)
+        for idx, line in enumerate(lines[:8]):
+            if line:
+                _oled.text(str(line)[:16], 0, idx * 8)
+        _oled.show()
+    except Exception:
+        pass
+
+
+def oled_boot(stage, line1="", line2="", line3=""):
+    oled_show_lines([
+        "RRC Bot Boot",
+        "----------------",
+        stage,
+        line1,
+        line2,
+        line3,
+    ])
 
 
 # ---- Minimal CBOR (RRC uses CBOR maps per RFC 8949, not msgpack) ----
@@ -445,6 +592,16 @@ def _fmt_uptime(seconds):
     return ("%dm%02ds" % (m, s)) if m > 0 else ("%ds" % s)
 
 
+def _fmt_bytes(n):
+    if n < 1024:
+        return "%dB" % n
+    if n < 1048576:
+        return "%.1fKB" % (n / 1024.0)
+    if n < 1073741824:
+        return "%.2fMB" % (n / 1048576.0)
+    return "%.2fGB" % (n / 1073741824.0)
+
+
 def _describe(value, depth=0):
     if isinstance(value, dict):
         if depth >= 2:
@@ -614,8 +771,59 @@ class RRCClient:
         self.bytes_in = 0
         self.bytes_out = 0
         self.cmds_handled = 0
+        self.last_msg_sender = ""
+        self.last_msg_text = ""
+        self._last_oled_ms = 0
         self.gpio_pins = {}
         self.gpio_modes = {}
+
+    def update_oled(self, force=False):
+        if _oled is None:
+            return
+        now_ms = _ticks_ms()
+        if not force and _ticks_diff(now_ms, self._last_oled_ms) < 900:
+            return
+        self._last_oled_ms = now_ms
+
+        if self.joined:
+            lnk = "LNK:JOIN(%dp)" % len(self.members)
+        elif self.welcomed:
+            lnk = "LNK:JOINING..."
+        elif self.connected:
+            lnk = "LNK:HANDSHAKE"
+        elif self.closed:
+            lnk = "LNK:CLOSED"
+        else:
+            lnk = "LNK:CONNECTING"
+
+        up = "UP:%s" % _fmt_uptime(_uptime_seconds())
+        rx_cnt = "RX:%d CMD:%d" % (self.msgs_in, self.cmds_handled)
+        tx_rx_b = "T:%s R:%s" % (_fmt_bytes(self.bytes_out), _fmt_bytes(self.bytes_in))
+
+        if self.last_msg_text:
+            sender = (self.last_msg_sender or "?")[:10]
+            hdr = "From %s:" % sender
+            msg1 = self.last_msg_text[:16]
+            msg2 = self.last_msg_text[16:32]
+        else:
+            hdr = "Room: %s" % self.room[:10]
+            msg1 = "(no msgs yet)"
+            msg2 = ""
+
+        try:
+            _oled.fill(0)
+            _oled.text(lnk[:16], 0, 0)
+            _oled.text(up[:16], 0, 8)
+            _oled.text(rx_cnt[:16], 0, 16)
+            _oled.text(tx_rx_b[:16], 0, 24)
+            _oled.hline(0, 33, 128, 1)
+            _oled.text(hdr[:16], 0, 36)
+            _oled.text(msg1, 0, 46)
+            if msg2:
+                _oled.text(msg2, 0, 55)
+            _oled.show()
+        except Exception:
+            pass
 
     def _find_lora_iface(self):
         for iface in getattr(self.rns, "interfaces", ()):
@@ -625,6 +833,9 @@ class RRCClient:
 
     def _reserved_gpio_pins(self):
         reserved = set(SYSTEM_RESERVED_PINS)
+        if _oled is not None or OLED_ENABLED:
+            reserved.add(OLED_SDA_PIN)
+            reserved.add(OLED_SCL_PIN)
         iface = self._find_lora_iface()
         if iface is not None:
             for attr in ("_sck_pin", "_mosi_pin", "_miso_pin", "_cs_pin", "_busy_pin", "_dio1_pin", "_reset_pin"):
@@ -637,13 +848,17 @@ class RRCClient:
 
     def _cmd_help(self):
         p = BOT_PREFIX
-        return (
-            "Bot commands (prefix '%s', '/' is reserved for RRC hub): "
-            "%shelp | %sesp32 | %ssx1262 | %srns | "
-            "%sgpio get <pin> [in|pu|pd] | %sgpio set <pin> <0|1|on|off|toggle> | "
-            "%sgpio list | %sled [on|off|toggle|status]"
-            % (p, p, p, p, p, p, p, p, p)
-        )
+        return "\n".join([
+            "Bot commands (prefix '%s', '/' is reserved for RRC hub):" % p,
+            "%shelp" % p,
+            "%sesp32" % p,
+            "%ssx1262" % p,
+            "%srns" % p,
+            "%sgpio get <pin> [in|pu|pd]" % p,
+            "%sgpio set <pin> <0|1|on|off|toggle>" % p,
+            "%sgpio list" % p,
+            "%sled [on|off|toggle|status]" % p,
+        ])
 
     def _cmd_esp32(self):
         gc.collect()
@@ -670,11 +885,12 @@ class RRCClient:
         except Exception:
             pass
 
-        fs_info = "?"
+        fs_free, fs_total = "?", "?"
         try:
             st = os.statvfs("/")
             bsize = st[0]
-            fs_info = "%dKB/%dKB free" % ((st[3] * bsize) // 1024, (st[2] * bsize) // 1024)
+            fs_free = _fmt_bytes(st[3] * bsize)
+            fs_total = _fmt_bytes(st[2] * bsize)
         except Exception:
             pass
 
@@ -689,15 +905,25 @@ class RRCClient:
             pass
 
         up_str = _fmt_uptime(_uptime_seconds())
-        return (
-            "[ESP32-S3] %s (uPy %s) cpu=%s up=%s | mem: free=%dB alloc=%dB (%d%%) | fs=%s | temp=%s rst=%s"
-            % (chip, fw_ver, freq_mhz, up_str, free_b, alloc_b, used_pct, fs_info, temp_str, rst_cause)
-        )
+        return "\n".join([
+            "[ESP32-S3]",
+            "board=%s" % chip,
+            "firmware=uPy %s" % fw_ver,
+            "cpu=%s" % freq_mhz,
+            "uptime=%s" % up_str,
+            "mem_free=%s" % _fmt_bytes(free_b),
+            "mem_used=%s (%d%%)" % (_fmt_bytes(alloc_b), used_pct),
+            "mem_total=%s" % _fmt_bytes(total_b),
+            "fs_free=%s" % fs_free,
+            "fs_total=%s" % fs_total,
+            "temp=%s" % temp_str,
+            "reset_cause=%s" % rst_cause,
+        ])
 
     def _cmd_sx1262(self):
         iface = self._find_lora_iface()
         if iface is None:
-            return "[SX1262] No LoRaInterface registered on this Reticulum instance"
+            return "[SX1262]\nstatus=No LoRaInterface registered"
 
         freq_khz = getattr(iface, "_freq_khz", 0)
         freq_mhz = ("%.3fMHz" % (freq_khz / 1000.0)) if freq_khz else "?"
@@ -729,24 +955,35 @@ class RRCClient:
         modem = getattr(iface, "_modem", None)
         crc_errs = getattr(modem, "crc_errors", 0) if modem is not None else 0
 
-        pins = "sck=%s,mosi=%s,miso=%s,cs=%s,busy=%s,dio1=%s,rst=%s" % (
-            getattr(iface, "_sck_pin", "?"),
-            getattr(iface, "_mosi_pin", "?"),
-            getattr(iface, "_miso_pin", "?"),
-            getattr(iface, "_cs_pin", "?"),
-            getattr(iface, "_busy_pin", "?"),
-            getattr(iface, "_dio1_pin", "?"),
-            getattr(iface, "_reset_pin", "?"),
-        )
-        return (
-            "[SX1262] %s online=%s | %s SF%s BW%s CR4/%s pwr=%sdBm pre=%s sw=%s crc=%s br=%dbps"
-            " | sig: rssi=%s snr=%s lbt=%s(w=%d,f=%d) | tx=%d(%dB) rx=%d(%dB) crc_err=%d | %s"
-            % (
-                getattr(iface, "name", "LoRa"), online, freq_mhz, sf, bw, cr,
-                tx_pwr, pre, sw_str, crc, br, rssi_str, snr_str, lbt_str,
-                lbt_w, lbt_f, tx_pkts, tx_bytes, rx_pkts, rx_bytes, crc_errs, pins,
-            )
-        )
+        return "\n".join([
+            "[SX1262]",
+            "name=%s" % getattr(iface, "name", "LoRa"),
+            "online=%s" % online,
+            "freq=%s" % freq_mhz,
+            "sf=%s" % sf,
+            "bw=%skHz" % bw,
+            "cr=4/%s" % cr,
+            "tx_power=%sdBm" % tx_pwr,
+            "preamble=%s" % pre,
+            "syncword=%s" % sw_str,
+            "crc=%s" % crc,
+            "bitrate=%dbps" % br,
+            "rssi=%s" % rssi_str,
+            "snr=%s" % snr_str,
+            "lbt_threshold=%s" % lbt_str,
+            "lbt_waits=%d" % lbt_w,
+            "lbt_forced=%d" % lbt_f,
+            "tx_pkts=%d (%s)" % (tx_pkts, _fmt_bytes(tx_bytes)),
+            "rx_pkts=%d (%s)" % (rx_pkts, _fmt_bytes(rx_bytes)),
+            "crc_errors=%d" % crc_errs,
+            "sck=%s" % getattr(iface, "_sck_pin", "?"),
+            "mosi=%s" % getattr(iface, "_mosi_pin", "?"),
+            "miso=%s" % getattr(iface, "_miso_pin", "?"),
+            "cs=%s" % getattr(iface, "_cs_pin", "?"),
+            "busy=%s" % getattr(iface, "_busy_pin", "?"),
+            "dio1=%s" % getattr(iface, "_dio1_pin", "?"),
+            "reset=%s" % getattr(iface, "_reset_pin", "?"),
+        ])
 
     def _cmd_rns(self):
         try:
@@ -780,35 +1017,52 @@ class RRCClient:
         rel_lnk = getattr(Transport, "relayed_links", 0) if Transport else 0
         rel_prf = getattr(Transport, "relayed_proofs", 0) if Transport else 0
 
-        link_info = "none"
+        lines = [
+            "[uRNS]",
+            "identity=%s" % id_hex,
+            "transport=%s" % t_enabled,
+            "interfaces=%s" % if_summary,
+            "paths=%d" % paths_n,
+            "destinations=%d" % dests_n,
+            "reachable=%d" % reach_n,
+            "active_links=%d" % act_links,
+            "pending_links=%d" % pend_links,
+        ]
         if self.link is not None:
             rtt_ms = int((getattr(self.link, "rtt", 0) or 0) * 1000)
-            link_info = "id=%s rtt=%dms mdu=%sB hops=%s" % (
-                self.link.link_id.hex()[:8],
-                rtt_ms,
-                getattr(self.link, "mdu", "?"),
-                getattr(self.link, "expected_hops", "?"),
-            )
+            lines.extend([
+                "link_id=%s" % self.link.link_id.hex()[:8],
+                "link_rtt=%dms" % rtt_ms,
+                "link_mdu=%sB" % getattr(self.link, "mdu", "?"),
+                "link_hops=%s" % getattr(self.link, "expected_hops", "?"),
+            ])
+        else:
+            lines.append("link=none")
 
-        return (
-            "[uRNS] id=%s transport=%s ifaces=%s | tables: paths=%d dests=%d reach=%d"
-            " | links: act=%d pend=%d (%s) | relay: ann=%d data=%d lnk=%d prf=%d"
-            " | rrc: sess=%d room=%s peers=%d in=%d(%dB) out=%d(%dB)"
-            % (
-                id_hex, t_enabled, if_summary, paths_n, dests_n, reach_n,
-                act_links, pend_links, link_info, rel_ann, rel_dat, rel_lnk, rel_prf,
-                self.session_no, self.room, len(self.members),
-                self.msgs_in, self.bytes_in, self.msgs_out, self.bytes_out,
-            )
-        )
+        lines.extend([
+            "relayed_announces=%d" % rel_ann,
+            "relayed_data=%d" % rel_dat,
+            "relayed_links=%d" % rel_lnk,
+            "relayed_proofs=%d" % rel_prf,
+            "rrc_session=%d" % self.session_no,
+            "rrc_room=%s" % self.room,
+            "rrc_peers=%d" % len(self.members),
+            "rrc_in=%d (%s)" % (self.msgs_in, _fmt_bytes(self.bytes_in)),
+            "rrc_out=%d (%s)" % (self.msgs_out, _fmt_bytes(self.bytes_out)),
+        ])
+        return "\n".join(lines)
 
     def _cmd_led(self, args):
         if not args or args[0] in ("status", "get", "read", "?"):
             on = led_get()
             raw = led.value() if led is not None else (0 if on else 1)
-            return "[LED] GPIO%d=%s (raw=%d, active_low=%s)" % (
-                LED_PIN, "ON" if on else "OFF", raw, LED_ACTIVE_LOW,
-            )
+            return "\n".join([
+                "[LED]",
+                "pin=GPIO%d" % LED_PIN,
+                "state=%s" % ("ON" if on else "OFF"),
+                "raw=%d" % raw,
+                "active_low=%s" % LED_ACTIVE_LOW,
+            ])
         act = args[0]
         if act in ("on", "1", "true", "yes"):
             led_set(True)
@@ -817,10 +1071,15 @@ class RRCClient:
         elif act == "toggle":
             led_set(not led_get())
         else:
-            return "[LED] Usage: %sled [on|off|toggle|status]" % BOT_PREFIX
+            return "[LED]\nusage=%sled [on|off|toggle|status]" % BOT_PREFIX
         on = led_get()
         raw = led.value() if led is not None else (0 if on else 1)
-        return "[LED] GPIO%d set to %s (raw=%d)" % (LED_PIN, "ON" if on else "OFF", raw)
+        return "\n".join([
+            "[LED]",
+            "pin=GPIO%d" % LED_PIN,
+            "state=%s" % ("ON" if on else "OFF"),
+            "raw=%d" % raw,
+        ])
 
     def _cmd_gpio(self, args):
         reserved = self._reserved_gpio_pins()
@@ -828,18 +1087,21 @@ class RRCClient:
         if not args or args[0] in ("list", "status", "info"):
             led_on = led_get()
             led_raw = led.value() if led is not None else (0 if led_on else 1)
-            cfg_items = []
-            for p in sorted(self.gpio_pins.keys()):
-                try:
-                    val = self.gpio_pins[p].value()
-                except Exception:
-                    val = "?"
-                cfg_items.append("GPIO%d=%s(%s)" % (p, val, self.gpio_modes.get(p, "?")))
-            cfg_str = ", ".join(cfg_items) if cfg_items else "none"
-            return "[GPIO] LED=GPIO%d(%s,raw=%d) | configured: %s | reserved(radio/sys): %s" % (
-                LED_PIN, "ON" if led_on else "OFF", led_raw, cfg_str,
-                ",".join(str(x) for x in sorted(reserved)),
-            )
+            lines = [
+                "[GPIO]",
+                "led=GPIO%d (%s, raw=%d)" % (LED_PIN, "ON" if led_on else "OFF", led_raw),
+            ]
+            if self.gpio_pins:
+                for p in sorted(self.gpio_pins.keys()):
+                    try:
+                        val = self.gpio_pins[p].value()
+                    except Exception:
+                        val = "?"
+                    lines.append("%s=%s (%s)" % (_pin_label(p), val, self.gpio_modes.get(p, "?")))
+            else:
+                lines.append("configured=none")
+            lines.append("reserved=%s" % ",".join(str(x) for x in sorted(reserved)))
+            return "\n".join(lines)
 
         sub = args[0]
         if sub.isdigit() or sub in XIAO_PIN_ALIASES or (sub.startswith("gpio") and sub[4:].isdigit()):
@@ -848,21 +1110,25 @@ class RRCClient:
 
         if sub in ("get", "read"):
             if len(args) < 2:
-                return "[GPIO] Usage: %sgpio get <pin> [in|pu|pd]" % BOT_PREFIX
+                return "[GPIO]\nusage=%sgpio get <pin> [in|pu|pd]" % BOT_PREFIX
             try:
                 pin_no = _parse_pin(args[1])
             except Exception:
-                return "[GPIO] Invalid pin: " + str(args[1])
+                return "[GPIO]\nerror=Invalid pin: %s" % args[1]
             if pin_no < GPIO_MIN_PIN or pin_no > GPIO_MAX_PIN:
-                return "[GPIO] Pin out of range (%d..%d): %d" % (GPIO_MIN_PIN, GPIO_MAX_PIN, pin_no)
+                return "[GPIO]\nerror=Pin out of range (%d..%d): %d" % (GPIO_MIN_PIN, GPIO_MAX_PIN, pin_no)
             if pin_no in reserved:
-                return "[GPIO] Refusing to touch reserved radio/system %s" % _pin_label(pin_no)
+                return "[GPIO]\nerror=Refusing to touch reserved radio/system %s" % _pin_label(pin_no)
 
             if pin_no == LED_PIN and led is not None and len(args) == 2:
                 raw = led.value()
-                return "[GPIO] %s: value=%d (%s, LED=%s, mode=OUT)" % (
-                    _pin_label(pin_no), raw, "HIGH" if raw else "LOW", "ON" if led_get() else "OFF",
-                )
+                return "\n".join([
+                    "[GPIO]",
+                    "pin=%s" % _pin_label(pin_no),
+                    "value=%d (%s)" % (raw, "HIGH" if raw else "LOW"),
+                    "led=%s" % ("ON" if led_get() else "OFF"),
+                    "mode=OUT",
+                ])
 
             pull_arg = args[2].lower() if len(args) >= 3 else None
             try:
@@ -874,30 +1140,33 @@ class RRCClient:
                     elif pull_arg in (None, "in", "input"):
                         p, mode_name = Pin(pin_no, Pin.IN), "IN"
                     else:
-                        return "[GPIO] Unknown pull/mode '%s' (use in, pu, or pd)" % pull_arg
+                        return "[GPIO]\nerror=Unknown pull/mode '%s' (use in, pu, or pd)" % pull_arg
                     self.gpio_pins[pin_no] = p
                     self.gpio_modes[pin_no] = mode_name
                 else:
                     p = self.gpio_pins[pin_no]
                     mode_name = self.gpio_modes.get(pin_no, "IN")
                 val = int(p.value())
-                return "[GPIO] %s: value=%d (%s) mode=%s" % (
-                    _pin_label(pin_no), val, "HIGH" if val else "LOW", mode_name,
-                )
+                return "\n".join([
+                    "[GPIO]",
+                    "pin=%s" % _pin_label(pin_no),
+                    "value=%d (%s)" % (val, "HIGH" if val else "LOW"),
+                    "mode=%s" % mode_name,
+                ])
             except Exception as e:
-                return "[GPIO] Error reading %s: %s" % (_pin_label(pin_no), e)
+                return "[GPIO]\nerror=Error reading %s: %s" % (_pin_label(pin_no), e)
 
         if sub in ("set", "write"):
             if len(args) < 3:
-                return "[GPIO] Usage: %sgpio set <pin> <0|1|on|off|high|low|toggle>" % BOT_PREFIX
+                return "[GPIO]\nusage=%sgpio set <pin> <0|1|on|off|high|low|toggle>" % BOT_PREFIX
             try:
                 pin_no = _parse_pin(args[1])
             except Exception:
-                return "[GPIO] Invalid pin: " + str(args[1])
+                return "[GPIO]\nerror=Invalid pin: %s" % args[1]
             if pin_no < GPIO_MIN_PIN or pin_no > GPIO_MAX_PIN:
-                return "[GPIO] Pin out of range (%d..%d): %d" % (GPIO_MIN_PIN, GPIO_MAX_PIN, pin_no)
+                return "[GPIO]\nerror=Pin out of range (%d..%d): %d" % (GPIO_MIN_PIN, GPIO_MAX_PIN, pin_no)
             if pin_no in reserved:
-                return "[GPIO] Refusing to modify reserved radio/system %s" % _pin_label(pin_no)
+                return "[GPIO]\nerror=Refusing to modify reserved radio/system %s" % _pin_label(pin_no)
 
             val_arg = args[2].lower()
             if val_arg in ("1", "on", "high", "true", "hi"):
@@ -907,7 +1176,7 @@ class RRCClient:
             elif val_arg == "toggle":
                 target = None
             else:
-                return "[GPIO] Invalid state '%s' (use 0, 1, on, off, high, low, or toggle)" % args[2]
+                return "[GPIO]\nerror=Invalid state '%s' (use 0, 1, on, off, high, low, or toggle)" % args[2]
 
             try:
                 if pin_no == LED_PIN and led is not None:
@@ -916,9 +1185,13 @@ class RRCClient:
                     led.value(new_val)
                     global _led_state
                     _led_state = (new_val == 0) if LED_ACTIVE_LOW else (new_val != 0)
-                    return "[GPIO] %s set to %d (%s, LED=%s) mode=OUT" % (
-                        _pin_label(pin_no), new_val, "HIGH" if new_val else "LOW", "ON" if _led_state else "OFF",
-                    )
+                    return "\n".join([
+                        "[GPIO]",
+                        "pin=%s" % _pin_label(pin_no),
+                        "value=%d (%s)" % (new_val, "HIGH" if new_val else "LOW"),
+                        "led=%s" % ("ON" if _led_state else "OFF"),
+                        "mode=OUT",
+                    ])
 
                 p = self.gpio_pins.get(pin_no)
                 if p is None or self.gpio_modes.get(pin_no) != "OUT":
@@ -933,15 +1206,21 @@ class RRCClient:
                     p.value(new_val)
 
                 actual = int(p.value())
-                return "[GPIO] %s set to %d (%s) mode=OUT" % (
-                    _pin_label(pin_no), actual, "HIGH" if actual else "LOW",
-                )
+                return "\n".join([
+                    "[GPIO]",
+                    "pin=%s" % _pin_label(pin_no),
+                    "value=%d (%s)" % (actual, "HIGH" if actual else "LOW"),
+                    "mode=OUT",
+                ])
             except Exception as e:
-                return "[GPIO] Error setting %s: %s" % (_pin_label(pin_no), e)
+                return "[GPIO]\nerror=Error setting %s: %s" % (_pin_label(pin_no), e)
 
-        return "[GPIO] Usage: %sgpio get <pin> [in|pu|pd] | %sgpio set <pin> <0|1|on|off|toggle> | %sgpio list" % (
-            BOT_PREFIX, BOT_PREFIX, BOT_PREFIX,
-        )
+        return "\n".join([
+            "[GPIO]",
+            "usage=%sgpio get <pin> [in|pu|pd]" % BOT_PREFIX,
+            "usage=%sgpio set <pin> <0|1|on|off|toggle>" % BOT_PREFIX,
+            "usage=%sgpio list" % BOT_PREFIX,
+        ])
 
     def handle_bot_command(self, text):
         """Parse and execute a bot command starting with BOT_PREFIX.
@@ -1088,6 +1367,7 @@ class RRCClient:
                 link.set_resource_concluded_callback(self._on_resource)
             else:
                 link.resource_concluded_callback = self._on_resource
+            oled_boot("Link ACTIVE", "rtt=%dms hops=%s" % (int((link.rtt or 0) * 1000), getattr(link, "expected_hops", "?")), "Sending IDENTIFY")
 
         def on_closed(link):
             self.closed = True
@@ -1105,6 +1385,7 @@ class RRCClient:
                 % (self.msgs_in, self.msgs_out, self.bytes_in, self.bytes_out)
             )
             print("      known_members=%d" % len(self.members))
+            self.update_oled(force=True)
 
         OutgoingLink(
             destination,
@@ -1112,10 +1393,13 @@ class RRCClient:
             closed_callback=on_closed,
         )
         print("[RRC] Link request sent")
+        oled_boot("Link requested", "Hub:" + self.hub_hash.hex()[:12], "Waiting proof...")
 
         while not self.closed:
             await asyncio.sleep(0.25)
             _uptime_seconds()
+            if self.welcomed or self.joined:
+                self.update_oled()
             if not self.connected or self.link is None or self.link.status != 1:
                 continue
 
@@ -1196,12 +1480,16 @@ class RRCClient:
             if Transport.has_path(self.hub_hash):
                 identity = Identity.recall(self.hub_hash)
                 if identity is not None:
-                    print("[RRC] Path to hub: hops=" + str(Transport.hops_to(self.hub_hash)))
+                    hops = Transport.hops_to(self.hub_hash)
+                    print("[RRC] Path to hub: hops=" + str(hops))
+                    oled_boot("Hub path found", "Hops: " + str(hops), "Opening link...")
                     return identity
                 if time.time() - last_request >= 10:
                     print("[RRC] Path known, waiting for hub identity/announce")
+                    oled_boot("Path known", "Wait announce...", "Hub:" + self.hub_hash.hex()[:12])
             if time.time() - last_request >= 15:
                 print("[RRC] Requesting path to hub " + self.hub_hash.hex())
+                oled_boot("Requesting path", "Hub:" + self.hub_hash.hex()[:12], "Sess:" + str(self.session_no))
                 try:
                     Transport.request_path(self.hub_hash)
                 except Exception as e:
@@ -1383,6 +1671,7 @@ class RRCClient:
                 else:
                     print("      member list: (hub did not include identities)")
                 print("      known_members=%d" % len(self.members))
+                self.update_oled(force=True)
             else:
                 print("[RRC] MEMBER JOINED room=%s nick=%s%s" % (room, nick or "?", meta))
                 if hashes:
@@ -1431,12 +1720,16 @@ class RRCClient:
                     print("[RRC] Ignoring own reflected message (by src)")
                 return
 
+            self.last_msg_sender = str(sender)
+            self.last_msg_text = content.replace("\r", " ").replace("\n", " ").strip()
+
             reply = self.handle_bot_command(content)
             if reply is not None:
                 self.cmds_handled += 1
                 target_room = room or self.room
                 print("[BOT] Command from %s in %s: %s" % (sender, target_room, _short(content, 80)))
                 self.queue_text(T_MSG, target_room, reply)
+            self.update_oled(force=True)
 
         elif msg_type == T_NOTICE:
             content = _body_text(body)
@@ -1611,22 +1904,29 @@ def needs_wifi(config):
 
 
 def main():
+    init_oled()
+    oled_boot("Starting...", "Nick:" + str(RRC_NICK)[:11], "Room:" + ROOM_NAME[:11])
+
     try:
         hub_hash = _hub_hash_bytes()
     except Exception as e:
         print("[RRC] Invalid HUB_DEST_HASH: " + str(e))
         print("[RRC] Edit example_rrc.py and set HUB_DEST_HASH")
+        oled_boot("Config Error!", "Invalid hub hash")
         return
 
     if hub_hash == b"\x00" * 16:
         print("[RRC] HUB_DEST_HASH is not configured")
         print("[RRC] Edit example_rrc.py and set the hub's 32-char hex hash")
+        oled_boot("Config Error!", "HUB_DEST_HASH", "not configured")
         return
 
     if needs_wifi(CONFIG):
+        oled_boot("Connecting WiFi", str(WIFI_SSID)[:16])
         connect_wifi(WIFI_SSID, WIFI_PASS)
     gc.collect()
 
+    oled_boot("Init Reticulum", "Loading keys...")
     from urns import Reticulum
     from urns.log import LOG_NONE, LOG_NOTICE, LOG_DEBUG
 
@@ -1635,6 +1935,7 @@ def main():
     rns.config = CONFIG
     gc.collect()
 
+    oled_boot("Setup Interfaces", "Init LoRa SX1262")
     rns.setup_interfaces()
     gc.collect()
 
@@ -1647,6 +1948,7 @@ def main():
     print("[RRC] Bot prefix: " + BOT_PREFIX)
     if hasattr(gc, "mem_free"):
         print("[RRC] Free memory:", gc.mem_free(), "bytes")
+    oled_boot("RRC Ready", "ID:" + rns.identity.hexhash[:13], "Room:" + client.room[:11])
 
     async def runner():
         asyncio.create_task(client.run())
