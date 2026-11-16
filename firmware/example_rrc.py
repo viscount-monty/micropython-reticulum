@@ -67,6 +67,7 @@ def _uptime_seconds():
         _UPTIME_LAST_MS = now_ms
     return _UPTIME_TOTAL_MS // 1000
 
+
 # RRC timestamps are Unix-epoch milliseconds. Bare-metal MicroPython ports
 # use a 2000-01-01 epoch for time.time()/gmtime(), so shift when needed.
 try:
@@ -125,17 +126,30 @@ DEFAULT_RADIO_PINS = set([7, 8, 9, 39, 40, 41, 42])
 
 # Seeed XIAO ESP32-S3 header silkscreen pin aliases -> ESP32-S3 GPIO numbers
 XIAO_PIN_ALIASES = {
-    "d0": 1, "a0": 1,
-    "d1": 2, "a1": 2,
-    "d2": 3, "a2": 3,
-    "d3": 4, "a3": 4,
-    "d4": 5, "a4": 5, "sda": 5,
-    "d5": 6, "a5": 6, "scl": 6,
-    "d6": 43, "tx": 43,
-    "d7": 44, "rx": 44,
-    "d8": 7, "sck": 7,
-    "d9": 8, "miso": 8,
-    "d10": 9, "mosi": 9,
+    "d0": 1,
+    "a0": 1,
+    "d1": 2,
+    "a1": 2,
+    "d2": 3,
+    "a2": 3,
+    "d3": 4,
+    "a3": 4,
+    "d4": 5,
+    "a4": 5,
+    "sda": 5,
+    "d5": 6,
+    "a5": 6,
+    "scl": 6,
+    "d6": 43,
+    "tx": 43,
+    "d7": 44,
+    "rx": 44,
+    "d8": 7,
+    "sck": 7,
+    "d9": 8,
+    "miso": 8,
+    "d10": 9,
+    "mosi": 9,
     "led": 21,
 }
 
@@ -167,6 +181,7 @@ def _parse_pin(token):
 def _pin_label(pin_no):
     lbl = XIAO_PIN_LABELS.get(pin_no)
     return ("GPIO%d(%s)" % (pin_no, lbl)) if lbl else ("GPIO%d" % pin_no)
+
 
 # ---- RRC protocol constants (https://rrc.kc1awv.net/) ----
 RRC_VERSION = 1
@@ -262,7 +277,9 @@ def led_set(on):
     global _led_state
     _led_state = bool(on)
     if led is not None:
-        led.value((0 if _led_state else 1) if LED_ACTIVE_LOW else (1 if _led_state else 0))
+        led.value(
+            (0 if _led_state else 1) if LED_ACTIVE_LOW else (1 if _led_state else 0)
+        )
 
 
 def led_get():
@@ -292,7 +309,9 @@ class OLED128x64:
         self.height = 64
         self.pages = 8
         self.buffer = bytearray(self.pages * self.width)
-        self.fb = framebuf.FrameBuffer(self.buffer, self.width, self.height, framebuf.MONO_VLSB)
+        self.fb = framebuf.FrameBuffer(
+            self.buffer, self.width, self.height, framebuf.MONO_VLSB
+        )
         self._init_display()
 
     def _cmd(self, c):
@@ -300,26 +319,37 @@ class OLED128x64:
 
     def _init_display(self):
         cmds = [
-            0xAE,        # display off
-            0xD5, 0x80,  # clock div
-            0xA8, 0x3F,  # multiplex 64
-            0xD3, 0x00,  # display offset 0
-            0x40,        # start line 0
-            0x8D, 0x14,  # charge pump on (SSD1306; ignored/benign on SH1106)
-            0xAD, 0x8B,  # internal DC-DC on (SH1106)
+            0xAE,  # display off
+            0xD5,
+            0x80,  # clock div
+            0xA8,
+            0x3F,  # multiplex 64
+            0xD3,
+            0x00,  # display offset 0
+            0x40,  # start line 0
+            0x8D,
+            0x14,  # charge pump on (SSD1306; ignored/benign on SH1106)
+            0xAD,
+            0x8B,  # internal DC-DC on (SH1106)
         ]
         if self.controller == "ssd1306":
             cmds.extend([0x20, 0x02])  # page addressing mode
-        cmds.extend([
-            0xA1,        # segment remap
-            0xC8,        # COM scan dec
-            0xDA, 0x12,  # COM pins 128x64
-            0x81, 0xCF,  # contrast
-            0xD9, 0xF1,  # precharge
-            0xDB, 0x30,  # VCOMH deselect
-            0xA4,        # output follows RAM
-            0xA6,        # normal (not inverted)
-        ])
+        cmds.extend(
+            [
+                0xA1,  # segment remap
+                0xC8,  # COM scan dec
+                0xDA,
+                0x12,  # COM pins 128x64
+                0x81,
+                0xCF,  # contrast
+                0xD9,
+                0xF1,  # precharge
+                0xDB,
+                0x30,  # VCOMH deselect
+                0xA4,  # output follows RAM
+                0xA6,  # normal (not inverted)
+            ]
+        )
         for c in cmds:
             self._cmd(c)
         self._clear_ram()
@@ -366,7 +396,9 @@ def init_oled():
         from machine import I2C, SoftI2C
 
         try:
-            i2c = I2C(OLED_I2C_BUS, sda=Pin(OLED_SDA_PIN), scl=Pin(OLED_SCL_PIN), freq=100000)
+            i2c = I2C(
+                OLED_I2C_BUS, sda=Pin(OLED_SDA_PIN), scl=Pin(OLED_SCL_PIN), freq=100000
+            )
         except Exception:
             i2c = SoftI2C(scl=Pin(OLED_SCL_PIN), sda=Pin(OLED_SDA_PIN), freq=100000)
 
@@ -378,11 +410,17 @@ def init_oled():
                     addr = cand
                     break
         if addr not in found:
-            print("[OLED] No display found on I2C (SDA=%d SCL=%d scan=%s)" % (OLED_SDA_PIN, OLED_SCL_PIN, [hex(x) for x in found]))
+            print(
+                "[OLED] No display found on I2C (SDA=%d SCL=%d scan=%s)"
+                % (OLED_SDA_PIN, OLED_SCL_PIN, [hex(x) for x in found])
+            )
             return None
 
         _oled = OLED128x64(i2c, addr=addr, controller=OLED_CONTROLLER)
-        print("[OLED] Initialized %s 128x64 at %s (SDA=%d SCL=%d)" % (OLED_CONTROLLER, hex(addr), OLED_SDA_PIN, OLED_SCL_PIN))
+        print(
+            "[OLED] Initialized %s 128x64 at %s (SDA=%d SCL=%d)"
+            % (OLED_CONTROLLER, hex(addr), OLED_SDA_PIN, OLED_SCL_PIN)
+        )
         return _oled
     except Exception as e:
         print("[OLED] Init skipped: " + str(e))
@@ -583,7 +621,11 @@ def _hex(data):
 
 def _short(text, limit=160):
     text = str(text)
-    return text if len(text) <= limit else text[:limit] + "...(" + str(len(text)) + " chars)"
+    return (
+        text
+        if len(text) <= limit
+        else text[:limit] + "...(" + str(len(text)) + " chars)"
+    )
 
 
 def _fmt_ms(ms):
@@ -593,7 +635,13 @@ def _fmt_ms(ms):
         sec = ms // 1000 - UNIX_EPOCH_OFFSET
         tm = time.gmtime(sec)
         return "%04d-%02d-%02d %02d:%02d:%02d.%03d UTC" % (
-            tm[0], tm[1], tm[2], tm[3], tm[4], tm[5], ms % 1000,
+            tm[0],
+            tm[1],
+            tm[2],
+            tm[3],
+            tm[4],
+            tm[5],
+            ms % 1000,
         )
     except Exception:
         return str(ms) + " ms"
@@ -622,14 +670,22 @@ def _describe(value, depth=0):
     if isinstance(value, dict):
         if depth >= 2:
             return "{%d entries}" % len(value)
-        return "{" + ", ".join("%s=%s" % (k, _describe(value[k], depth + 1)) for k in value) + "}"
+        return (
+            "{"
+            + ", ".join("%s=%s" % (k, _describe(value[k], depth + 1)) for k in value)
+            + "}"
+        )
     if isinstance(value, (list, tuple)):
         if depth >= 2:
             return "[%d items]" % len(value)
         return "[" + ", ".join(_describe(x, depth + 1) for x in value) + "]"
     if isinstance(value, (bytes, bytearray)):
         raw = bytes(value)
-        return ("0x" + raw.hex()) if len(raw) <= 8 else ("0x%s...(%dB)" % (raw[:8].hex(), len(raw)))
+        return (
+            ("0x" + raw.hex())
+            if len(raw) <= 8
+            else ("0x%s...(%dB)" % (raw[:8].hex(), len(raw)))
+        )
     if isinstance(value, str):
         return _short(value, 120)
     return str(value)
@@ -637,7 +693,14 @@ def _describe(value, depth=0):
 
 def _describe_named(value, names, depth=0):
     if isinstance(value, dict):
-        return "{" + ", ".join("%s=%s" % (names.get(k, str(k)), _describe(value[k], depth + 1)) for k in value) + "}"
+        return (
+            "{"
+            + ", ".join(
+                "%s=%s" % (names.get(k, str(k)), _describe(value[k], depth + 1))
+                for k in value
+            )
+            + "}"
+        )
     if isinstance(value, (list, tuple)):
         return _describe(value, depth)
     return str(value)
@@ -703,7 +766,7 @@ def _split_utf8(text, max_bytes):
             remaining = remaining[split_at:].lstrip()
         else:
             head = piece
-            remaining = remaining[len(piece):]
+            remaining = remaining[len(piece) :]
         if head:
             chunks.append(head)
     return chunks or [""]
@@ -735,7 +798,11 @@ def validate_envelope(env):
             raise ValueError("room must be non-empty string")
     if K_NICK in env and env[K_NICK] is not None and not isinstance(env[K_NICK], str):
         raise ValueError("nick must be string")
-    if K_DST in env and env[K_DST] is not None and not isinstance(env[K_DST], (bytes, bytearray)):
+    if (
+        K_DST in env
+        and env[K_DST] is not None
+        and not isinstance(env[K_DST], (bytes, bytearray))
+    ):
         raise ValueError("dst must be bytes")
     return True
 
@@ -818,7 +885,7 @@ class RRCClient:
 
         if self.last_msg_text:
             sender = (self.last_msg_sender or "?")[:10]
-            hdr = "From %s:" % sender
+            hdr = "%s:" % sender
             msg1 = self.last_msg_text[:16]
             msg2 = self.last_msg_text[16:32]
         else:
@@ -843,7 +910,10 @@ class RRCClient:
 
     def _find_lora_iface(self):
         for iface in getattr(self.rns, "interfaces", ()):
-            if hasattr(iface, "_freq_khz") or iface.__class__.__name__ == "LoRaInterface":
+            if (
+                hasattr(iface, "_freq_khz")
+                or iface.__class__.__name__ == "LoRaInterface"
+            ):
                 return iface
         return None
 
@@ -854,7 +924,15 @@ class RRCClient:
             reserved.add(OLED_SCL_PIN)
         iface = self._find_lora_iface()
         if iface is not None:
-            for attr in ("_sck_pin", "_mosi_pin", "_miso_pin", "_cs_pin", "_busy_pin", "_dio1_pin", "_reset_pin"):
+            for attr in (
+                "_sck_pin",
+                "_mosi_pin",
+                "_miso_pin",
+                "_cs_pin",
+                "_busy_pin",
+                "_dio1_pin",
+                "_reset_pin",
+            ):
                 val = getattr(iface, attr, None)
                 if isinstance(val, int):
                     reserved.add(val)
@@ -864,17 +942,19 @@ class RRCClient:
 
     def _cmd_help(self):
         p = BOT_PREFIX
-        return "\n".join([
-            "Bot commands (prefix '%s', '/' is reserved for RRC hub):" % p,
-            "%shelp" % p,
-            "%sesp32" % p,
-            "%ssx1262" % p,
-            "%srns" % p,
-            "%sgpio get <pin> [in|pu|pd]" % p,
-            "%sgpio set <pin> <0|1|on|off|toggle>" % p,
-            "%sgpio list" % p,
-            "%sled [on|off|toggle|status]" % p,
-        ])
+        return "\n".join(
+            [
+                "Bot commands (prefix '%s', '/' is reserved for RRC hub):" % p,
+                "%shelp" % p,
+                "%sesp32" % p,
+                "%ssx1262" % p,
+                "%srns" % p,
+                "%sgpio get <pin> [in|pu|pd]" % p,
+                "%sgpio set <pin> <0|1|on|off|toggle>" % p,
+                "%sgpio list" % p,
+                "%sled [on|off|toggle|status]" % p,
+            ]
+        )
 
     def _cmd_esp32(self):
         gc.collect()
@@ -886,6 +966,7 @@ class RRCClient:
         freq_mhz, rst_cause = "?", "?"
         try:
             import machine
+
             if hasattr(machine, "freq"):
                 freq_mhz = "%dMHz" % (machine.freq() // 1000000)
             if hasattr(machine, "reset_cause"):
@@ -913,6 +994,7 @@ class RRCClient:
         temp_str = "n/a"
         try:
             import esp32
+
             if hasattr(esp32, "mcu_temperature"):
                 temp_str = "%.1fC" % esp32.mcu_temperature()
             elif hasattr(esp32, "raw_temperature"):
@@ -921,20 +1003,22 @@ class RRCClient:
             pass
 
         up_str = _fmt_uptime(_uptime_seconds())
-        return "\n".join([
-            "[ESP32-S3]",
-            "board=%s" % chip,
-            "firmware=uPy %s" % fw_ver,
-            "cpu=%s" % freq_mhz,
-            "uptime=%s" % up_str,
-            "mem_free=%s" % _fmt_bytes(free_b),
-            "mem_used=%s (%d%%)" % (_fmt_bytes(alloc_b), used_pct),
-            "mem_total=%s" % _fmt_bytes(total_b),
-            "fs_free=%s" % fs_free,
-            "fs_total=%s" % fs_total,
-            "temp=%s" % temp_str,
-            "reset_cause=%s" % rst_cause,
-        ])
+        return "\n".join(
+            [
+                "[ESP32-S3]",
+                "board=%s" % chip,
+                "firmware=uPy %s" % fw_ver,
+                "cpu=%s" % freq_mhz,
+                "uptime=%s" % up_str,
+                "mem_free=%s" % _fmt_bytes(free_b),
+                "mem_used=%s (%d%%)" % (_fmt_bytes(alloc_b), used_pct),
+                "mem_total=%s" % _fmt_bytes(total_b),
+                "fs_free=%s" % fs_free,
+                "fs_total=%s" % fs_total,
+                "temp=%s" % temp_str,
+                "reset_cause=%s" % rst_cause,
+            ]
+        )
 
     def _cmd_sx1262(self):
         iface = self._find_lora_iface()
@@ -957,10 +1041,16 @@ class RRCClient:
         rssi = getattr(iface, "rssi", None)
         snr = getattr(iface, "snr", None)
         rssi_str = ("%sdBm" % rssi) if rssi is not None else "n/a"
-        snr_str = ("%.1fdB" % snr) if isinstance(snr, (int, float)) else (str(snr) if snr is not None else "n/a")
+        snr_str = (
+            ("%.1fdB" % snr)
+            if isinstance(snr, (int, float))
+            else (str(snr) if snr is not None else "n/a")
+        )
 
         lbt_thr = getattr(iface, "_lbt_rssi", None)
-        lbt_str = ("%.1fdBm" % lbt_thr) if isinstance(lbt_thr, (int, float)) else str(lbt_thr)
+        lbt_str = (
+            ("%.1fdBm" % lbt_thr) if isinstance(lbt_thr, (int, float)) else str(lbt_thr)
+        )
         lbt_w = getattr(iface, "_lbt_waits", 0)
         lbt_f = getattr(iface, "_lbt_forced", 0)
 
@@ -971,35 +1061,37 @@ class RRCClient:
         modem = getattr(iface, "_modem", None)
         crc_errs = getattr(modem, "crc_errors", 0) if modem is not None else 0
 
-        return "\n".join([
-            "[SX1262]",
-            "name=%s" % getattr(iface, "name", "LoRa"),
-            "online=%s" % online,
-            "freq=%s" % freq_mhz,
-            "sf=%s" % sf,
-            "bw=%skHz" % bw,
-            "cr=4/%s" % cr,
-            "tx_power=%sdBm" % tx_pwr,
-            "preamble=%s" % pre,
-            "syncword=%s" % sw_str,
-            "crc=%s" % crc,
-            "bitrate=%dbps" % br,
-            "rssi=%s" % rssi_str,
-            "snr=%s" % snr_str,
-            "lbt_threshold=%s" % lbt_str,
-            "lbt_waits=%d" % lbt_w,
-            "lbt_forced=%d" % lbt_f,
-            "tx_pkts=%d (%s)" % (tx_pkts, _fmt_bytes(tx_bytes)),
-            "rx_pkts=%d (%s)" % (rx_pkts, _fmt_bytes(rx_bytes)),
-            "crc_errors=%d" % crc_errs,
-            "sck=%s" % getattr(iface, "_sck_pin", "?"),
-            "mosi=%s" % getattr(iface, "_mosi_pin", "?"),
-            "miso=%s" % getattr(iface, "_miso_pin", "?"),
-            "cs=%s" % getattr(iface, "_cs_pin", "?"),
-            "busy=%s" % getattr(iface, "_busy_pin", "?"),
-            "dio1=%s" % getattr(iface, "_dio1_pin", "?"),
-            "reset=%s" % getattr(iface, "_reset_pin", "?"),
-        ])
+        return "\n".join(
+            [
+                "[SX1262]",
+                "name=%s" % getattr(iface, "name", "LoRa"),
+                "online=%s" % online,
+                "freq=%s" % freq_mhz,
+                "sf=%s" % sf,
+                "bw=%skHz" % bw,
+                "cr=4/%s" % cr,
+                "tx_power=%sdBm" % tx_pwr,
+                "preamble=%s" % pre,
+                "syncword=%s" % sw_str,
+                "crc=%s" % crc,
+                "bitrate=%dbps" % br,
+                "rssi=%s" % rssi_str,
+                "snr=%s" % snr_str,
+                "lbt_threshold=%s" % lbt_str,
+                "lbt_waits=%d" % lbt_w,
+                "lbt_forced=%d" % lbt_f,
+                "tx_pkts=%d (%s)" % (tx_pkts, _fmt_bytes(tx_bytes)),
+                "rx_pkts=%d (%s)" % (rx_pkts, _fmt_bytes(rx_bytes)),
+                "crc_errors=%d" % crc_errs,
+                "sck=%s" % getattr(iface, "_sck_pin", "?"),
+                "mosi=%s" % getattr(iface, "_mosi_pin", "?"),
+                "miso=%s" % getattr(iface, "_miso_pin", "?"),
+                "cs=%s" % getattr(iface, "_cs_pin", "?"),
+                "busy=%s" % getattr(iface, "_busy_pin", "?"),
+                "dio1=%s" % getattr(iface, "_dio1_pin", "?"),
+                "reset=%s" % getattr(iface, "_reset_pin", "?"),
+            ]
+        )
 
     def _cmd_rns(self):
         try:
@@ -1008,11 +1100,14 @@ class RRCClient:
             Transport = None
 
         id_hex = getattr(self.identity, "hexhash", "?")
-        t_enabled = getattr(Transport, "transport_enabled", False) if Transport else False
+        t_enabled = (
+            getattr(Transport, "transport_enabled", False) if Transport else False
+        )
 
         ifaces = getattr(self.rns, "interfaces", ())
         if_parts = [
-            "%s(%s,tx=%d,rx=%d)" % (
+            "%s(%s,tx=%d,rx=%d)"
+            % (
                 getattr(i, "name", "?"),
                 "up" if getattr(i, "online", False) else "down",
                 getattr(i, "tx", 0),
@@ -1024,7 +1119,9 @@ class RRCClient:
 
         paths_n = len(getattr(Transport, "path_table", {})) if Transport else 0
         dests_n = len(getattr(Transport, "destination_table", {})) if Transport else 0
-        reach_n = len(getattr(Transport, "reachable_destinations", {})) if Transport else 0
+        reach_n = (
+            len(getattr(Transport, "reachable_destinations", {})) if Transport else 0
+        )
         act_links = len(getattr(Transport, "active_links", ())) if Transport else 0
         pend_links = len(getattr(Transport, "pending_links", ())) if Transport else 0
 
@@ -1046,39 +1143,45 @@ class RRCClient:
         ]
         if self.link is not None:
             rtt_ms = int((getattr(self.link, "rtt", 0) or 0) * 1000)
-            lines.extend([
-                "link_id=%s" % self.link.link_id.hex()[:8],
-                "link_rtt=%dms" % rtt_ms,
-                "link_mdu=%sB" % getattr(self.link, "mdu", "?"),
-                "link_hops=%s" % getattr(self.link, "expected_hops", "?"),
-            ])
+            lines.extend(
+                [
+                    "link_id=%s" % self.link.link_id.hex()[:8],
+                    "link_rtt=%dms" % rtt_ms,
+                    "link_mdu=%sB" % getattr(self.link, "mdu", "?"),
+                    "link_hops=%s" % getattr(self.link, "expected_hops", "?"),
+                ]
+            )
         else:
             lines.append("link=none")
 
-        lines.extend([
-            "relayed_announces=%d" % rel_ann,
-            "relayed_data=%d" % rel_dat,
-            "relayed_links=%d" % rel_lnk,
-            "relayed_proofs=%d" % rel_prf,
-            "rrc_session=%d" % self.session_no,
-            "rrc_room=%s" % self.room,
-            "rrc_peers=%d" % len(self.members),
-            "rrc_in=%d (%s)" % (self.msgs_in, _fmt_bytes(self.bytes_in)),
-            "rrc_out=%d (%s)" % (self.msgs_out, _fmt_bytes(self.bytes_out)),
-        ])
+        lines.extend(
+            [
+                "relayed_announces=%d" % rel_ann,
+                "relayed_data=%d" % rel_dat,
+                "relayed_links=%d" % rel_lnk,
+                "relayed_proofs=%d" % rel_prf,
+                "rrc_session=%d" % self.session_no,
+                "rrc_room=%s" % self.room,
+                "rrc_peers=%d" % len(self.members),
+                "rrc_in=%d (%s)" % (self.msgs_in, _fmt_bytes(self.bytes_in)),
+                "rrc_out=%d (%s)" % (self.msgs_out, _fmt_bytes(self.bytes_out)),
+            ]
+        )
         return "\n".join(lines)
 
     def _cmd_led(self, args):
         if not args or args[0] in ("status", "get", "read", "?"):
             on = led_get()
             raw = led.value() if led is not None else (0 if on else 1)
-            return "\n".join([
-                "[LED]",
-                "pin=GPIO%d" % LED_PIN,
-                "state=%s" % ("ON" if on else "OFF"),
-                "raw=%d" % raw,
-                "active_low=%s" % LED_ACTIVE_LOW,
-            ])
+            return "\n".join(
+                [
+                    "[LED]",
+                    "pin=GPIO%d" % LED_PIN,
+                    "state=%s" % ("ON" if on else "OFF"),
+                    "raw=%d" % raw,
+                    "active_low=%s" % LED_ACTIVE_LOW,
+                ]
+            )
         act = args[0]
         if act in ("on", "1", "true", "yes"):
             led_set(True)
@@ -1090,12 +1193,14 @@ class RRCClient:
             return "[LED]\nusage=%sled [on|off|toggle|status]" % BOT_PREFIX
         on = led_get()
         raw = led.value() if led is not None else (0 if on else 1)
-        return "\n".join([
-            "[LED]",
-            "pin=GPIO%d" % LED_PIN,
-            "state=%s" % ("ON" if on else "OFF"),
-            "raw=%d" % raw,
-        ])
+        return "\n".join(
+            [
+                "[LED]",
+                "pin=GPIO%d" % LED_PIN,
+                "state=%s" % ("ON" if on else "OFF"),
+                "raw=%d" % raw,
+            ]
+        )
 
     def _cmd_gpio(self, args):
         reserved = self._reserved_gpio_pins()
@@ -1105,7 +1210,8 @@ class RRCClient:
             led_raw = led.value() if led is not None else (0 if led_on else 1)
             lines = [
                 "[GPIO]",
-                "led=GPIO%d (%s, raw=%d)" % (LED_PIN, "ON" if led_on else "OFF", led_raw),
+                "led=GPIO%d (%s, raw=%d)"
+                % (LED_PIN, "ON" if led_on else "OFF", led_raw),
             ]
             if self.gpio_pins:
                 for p in sorted(self.gpio_pins.keys()):
@@ -1113,14 +1219,20 @@ class RRCClient:
                         val = self.gpio_pins[p].value()
                     except Exception:
                         val = "?"
-                    lines.append("%s=%s (%s)" % (_pin_label(p), val, self.gpio_modes.get(p, "?")))
+                    lines.append(
+                        "%s=%s (%s)" % (_pin_label(p), val, self.gpio_modes.get(p, "?"))
+                    )
             else:
                 lines.append("configured=none")
             lines.append("reserved=%s" % ",".join(str(x) for x in sorted(reserved)))
             return "\n".join(lines)
 
         sub = args[0]
-        if sub.isdigit() or sub in XIAO_PIN_ALIASES or (sub.startswith("gpio") and sub[4:].isdigit()):
+        if (
+            sub.isdigit()
+            or sub in XIAO_PIN_ALIASES
+            or (sub.startswith("gpio") and sub[4:].isdigit())
+        ):
             sub = "get"
             args = ["get"] + args
 
@@ -1132,19 +1244,28 @@ class RRCClient:
             except Exception:
                 return "[GPIO]\nerror=Invalid pin: %s" % args[1]
             if pin_no < GPIO_MIN_PIN or pin_no > GPIO_MAX_PIN:
-                return "[GPIO]\nerror=Pin out of range (%d..%d): %d" % (GPIO_MIN_PIN, GPIO_MAX_PIN, pin_no)
+                return "[GPIO]\nerror=Pin out of range (%d..%d): %d" % (
+                    GPIO_MIN_PIN,
+                    GPIO_MAX_PIN,
+                    pin_no,
+                )
             if pin_no in reserved:
-                return "[GPIO]\nerror=Refusing to touch reserved radio/system %s" % _pin_label(pin_no)
+                return (
+                    "[GPIO]\nerror=Refusing to touch reserved radio/system %s"
+                    % _pin_label(pin_no)
+                )
 
             if pin_no == LED_PIN and led is not None and len(args) == 2:
                 raw = led.value()
-                return "\n".join([
-                    "[GPIO]",
-                    "pin=%s" % _pin_label(pin_no),
-                    "value=%d (%s)" % (raw, "HIGH" if raw else "LOW"),
-                    "led=%s" % ("ON" if led_get() else "OFF"),
-                    "mode=OUT",
-                ])
+                return "\n".join(
+                    [
+                        "[GPIO]",
+                        "pin=%s" % _pin_label(pin_no),
+                        "value=%d (%s)" % (raw, "HIGH" if raw else "LOW"),
+                        "led=%s" % ("ON" if led_get() else "OFF"),
+                        "mode=OUT",
+                    ]
+                )
 
             pull_arg = args[2].lower() if len(args) >= 3 else None
             try:
@@ -1156,33 +1277,48 @@ class RRCClient:
                     elif pull_arg in (None, "in", "input"):
                         p, mode_name = Pin(pin_no, Pin.IN), "IN"
                     else:
-                        return "[GPIO]\nerror=Unknown pull/mode '%s' (use in, pu, or pd)" % pull_arg
+                        return (
+                            "[GPIO]\nerror=Unknown pull/mode '%s' (use in, pu, or pd)"
+                            % pull_arg
+                        )
                     self.gpio_pins[pin_no] = p
                     self.gpio_modes[pin_no] = mode_name
                 else:
                     p = self.gpio_pins[pin_no]
                     mode_name = self.gpio_modes.get(pin_no, "IN")
                 val = int(p.value())
-                return "\n".join([
-                    "[GPIO]",
-                    "pin=%s" % _pin_label(pin_no),
-                    "value=%d (%s)" % (val, "HIGH" if val else "LOW"),
-                    "mode=%s" % mode_name,
-                ])
+                return "\n".join(
+                    [
+                        "[GPIO]",
+                        "pin=%s" % _pin_label(pin_no),
+                        "value=%d (%s)" % (val, "HIGH" if val else "LOW"),
+                        "mode=%s" % mode_name,
+                    ]
+                )
             except Exception as e:
                 return "[GPIO]\nerror=Error reading %s: %s" % (_pin_label(pin_no), e)
 
         if sub in ("set", "write"):
             if len(args) < 3:
-                return "[GPIO]\nusage=%sgpio set <pin> <0|1|on|off|high|low|toggle>" % BOT_PREFIX
+                return (
+                    "[GPIO]\nusage=%sgpio set <pin> <0|1|on|off|high|low|toggle>"
+                    % BOT_PREFIX
+                )
             try:
                 pin_no = _parse_pin(args[1])
             except Exception:
                 return "[GPIO]\nerror=Invalid pin: %s" % args[1]
             if pin_no < GPIO_MIN_PIN or pin_no > GPIO_MAX_PIN:
-                return "[GPIO]\nerror=Pin out of range (%d..%d): %d" % (GPIO_MIN_PIN, GPIO_MAX_PIN, pin_no)
+                return "[GPIO]\nerror=Pin out of range (%d..%d): %d" % (
+                    GPIO_MIN_PIN,
+                    GPIO_MAX_PIN,
+                    pin_no,
+                )
             if pin_no in reserved:
-                return "[GPIO]\nerror=Refusing to modify reserved radio/system %s" % _pin_label(pin_no)
+                return (
+                    "[GPIO]\nerror=Refusing to modify reserved radio/system %s"
+                    % _pin_label(pin_no)
+                )
 
             val_arg = args[2].lower()
             if val_arg in ("1", "on", "high", "true", "hi"):
@@ -1192,7 +1328,10 @@ class RRCClient:
             elif val_arg == "toggle":
                 target = None
             else:
-                return "[GPIO]\nerror=Invalid state '%s' (use 0, 1, on, off, high, low, or toggle)" % args[2]
+                return (
+                    "[GPIO]\nerror=Invalid state '%s' (use 0, 1, on, off, high, low, or toggle)"
+                    % args[2]
+                )
 
             try:
                 if pin_no == LED_PIN and led is not None:
@@ -1201,13 +1340,15 @@ class RRCClient:
                     led.value(new_val)
                     global _led_state
                     _led_state = (new_val == 0) if LED_ACTIVE_LOW else (new_val != 0)
-                    return "\n".join([
-                        "[GPIO]",
-                        "pin=%s" % _pin_label(pin_no),
-                        "value=%d (%s)" % (new_val, "HIGH" if new_val else "LOW"),
-                        "led=%s" % ("ON" if _led_state else "OFF"),
-                        "mode=OUT",
-                    ])
+                    return "\n".join(
+                        [
+                            "[GPIO]",
+                            "pin=%s" % _pin_label(pin_no),
+                            "value=%d (%s)" % (new_val, "HIGH" if new_val else "LOW"),
+                            "led=%s" % ("ON" if _led_state else "OFF"),
+                            "mode=OUT",
+                        ]
+                    )
 
                 p = self.gpio_pins.get(pin_no)
                 if p is None or self.gpio_modes.get(pin_no) != "OUT":
@@ -1222,21 +1363,25 @@ class RRCClient:
                     p.value(new_val)
 
                 actual = int(p.value())
-                return "\n".join([
-                    "[GPIO]",
-                    "pin=%s" % _pin_label(pin_no),
-                    "value=%d (%s)" % (actual, "HIGH" if actual else "LOW"),
-                    "mode=OUT",
-                ])
+                return "\n".join(
+                    [
+                        "[GPIO]",
+                        "pin=%s" % _pin_label(pin_no),
+                        "value=%d (%s)" % (actual, "HIGH" if actual else "LOW"),
+                        "mode=OUT",
+                    ]
+                )
             except Exception as e:
                 return "[GPIO]\nerror=Error setting %s: %s" % (_pin_label(pin_no), e)
 
-        return "\n".join([
-            "[GPIO]",
-            "usage=%sgpio get <pin> [in|pu|pd]" % BOT_PREFIX,
-            "usage=%sgpio set <pin> <0|1|on|off|toggle>" % BOT_PREFIX,
-            "usage=%sgpio list" % BOT_PREFIX,
-        ])
+        return "\n".join(
+            [
+                "[GPIO]",
+                "usage=%sgpio get <pin> [in|pu|pd]" % BOT_PREFIX,
+                "usage=%sgpio set <pin> <0|1|on|off|toggle>" % BOT_PREFIX,
+                "usage=%sgpio list" % BOT_PREFIX,
+            ]
+        )
 
     def handle_bot_command(self, text):
         """Parse and execute a bot command starting with BOT_PREFIX.
@@ -1247,9 +1392,13 @@ class RRCClient:
         if not isinstance(text, str):
             return None
         stripped = text.strip()
-        if not stripped or stripped.startswith("/") or not stripped.startswith(BOT_PREFIX):
+        if (
+            not stripped
+            or stripped.startswith("/")
+            or not stripped.startswith(BOT_PREFIX)
+        ):
             return None
-        cmdline = stripped[len(BOT_PREFIX):].strip()
+        cmdline = stripped[len(BOT_PREFIX) :].strip()
         if not cmdline:
             return None
 
@@ -1270,7 +1419,9 @@ class RRCClient:
         if cmd == "led":
             return self._cmd_led(args)
         return "Unknown command '%s%s'. Type %shelp for available commands." % (
-            BOT_PREFIX, cmd, BOT_PREFIX,
+            BOT_PREFIX,
+            cmd,
+            BOT_PREFIX,
         )
 
     # ---- RRC session & link management ----
@@ -1332,7 +1483,11 @@ class RRCClient:
         from urns.link import OutgoingLink
 
         destination = Destination(
-            hub_identity, Destination.OUT, Destination.SINGLE, "rrc", "hub",
+            hub_identity,
+            Destination.OUT,
+            Destination.SINGLE,
+            "rrc",
+            "hub",
         )
         if destination.hash != self.hub_hash:
             raise ValueError(
@@ -1371,7 +1526,9 @@ class RRCClient:
             print(
                 "      mtu=%s mdu=%s rtt_ms=%d hops=%s"
                 % (
-                    link.mtu, link.mdu, int((link.rtt or 0) * 1000),
+                    link.mtu,
+                    link.mdu,
+                    int((link.rtt or 0) * 1000),
                     getattr(link, "expected_hops", "?"),
                 )
             )
@@ -1385,7 +1542,8 @@ class RRCClient:
                 link.resource_concluded_callback = self._on_resource
             oled_boot(
                 "Link ACTIVE",
-                "RTT:%dms Hops:%s" % (int((link.rtt or 0) * 1000), getattr(link, "expected_hops", "?")),
+                "RTT:%dms Hops:%s"
+                % (int((link.rtt or 0) * 1000), getattr(link, "expected_hops", "?")),
                 "ID:" + _short_addr(self.identity.hexhash),
                 "Send IDENTIFY..",
             )
@@ -1438,7 +1596,9 @@ class RRCClient:
                 retry_iv = self._handshake_retry_interval()
                 if self.hello_attempts == 0 or (now - self.hello_sent_at >= retry_iv):
                     if self.hello_attempts >= MAX_HANDSHAKE_RETRIES:
-                        print("[RRC] Handshake timed out waiting for WELCOME, closing link")
+                        print(
+                            "[RRC] Handshake timed out waiting for WELCOME, closing link"
+                        )
                         try:
                             self.link.teardown()
                         except Exception:
@@ -1450,7 +1610,10 @@ class RRCClient:
                         self.link.identify(self.identity)
                         self.identified = True
                         self.last_tx_at = time.time()
-                        print("[RRC] -> IDENTIFY %s (attempt %d)" % (self.identity.hexhash, self.hello_attempts + 1))
+                        print(
+                            "[RRC] -> IDENTIFY %s (attempt %d)"
+                            % (self.identity.hexhash, self.hello_attempts + 1)
+                        )
                     except Exception as e:
                         print("[RRC] Identify failed: " + str(e))
 
@@ -1475,7 +1638,10 @@ class RRCClient:
                 retry_iv = self._handshake_retry_interval()
                 if self.join_attempts == 0 or (now - self.join_sent_at >= retry_iv):
                     if self.join_attempts >= MAX_HANDSHAKE_RETRIES:
-                        print("[RRC] Timed out waiting for JOINED on %s, closing link" % self.room)
+                        print(
+                            "[RRC] Timed out waiting for JOINED on %s, closing link"
+                            % self.room
+                        )
                         try:
                             self.link.teardown()
                         except Exception:
@@ -1549,10 +1715,17 @@ class RRCClient:
             },
         }
         if self._send_env(T_HELLO, body=body):
-            print("[RRC] -> HELLO name=%s version=%s nick=%s" % (CLIENT_NAME, CLIENT_VERSION, self.nick))
+            print(
+                "[RRC] -> HELLO name=%s version=%s nick=%s"
+                % (CLIENT_NAME, CLIENT_VERSION, self.nick)
+            )
 
     def _send_join(self):
-        max_room_b = int(self.limits.get(B_LIMIT_MAX_ROOM_NAME_BYTES, DEFAULT_LIMITS[B_LIMIT_MAX_ROOM_NAME_BYTES]))
+        max_room_b = int(
+            self.limits.get(
+                B_LIMIT_MAX_ROOM_NAME_BYTES, DEFAULT_LIMITS[B_LIMIT_MAX_ROOM_NAME_BYTES]
+            )
+        )
         room_norm = self.room.strip().lower()
         if not room_norm or len(room_norm.encode("utf-8")) > max_room_b:
             print("[RRC] Invalid or oversized room name: " + str(self.room))
@@ -1565,7 +1738,11 @@ class RRCClient:
             self.awaiting_joined = False
 
     def _max_body_bytes(self):
-        hub_max = int(self.limits.get(B_LIMIT_MAX_MSG_BODY_BYTES, DEFAULT_LIMITS[B_LIMIT_MAX_MSG_BODY_BYTES]))
+        hub_max = int(
+            self.limits.get(
+                B_LIMIT_MAX_MSG_BODY_BYTES, DEFAULT_LIMITS[B_LIMIT_MAX_MSG_BODY_BYTES]
+            )
+        )
         mdu = getattr(self.link, "mdu", 431) if self.link else 431
         return min(hub_max, max(64, mdu - 75))
 
@@ -1589,15 +1766,29 @@ class RRCClient:
             K_SRC: self.identity.hash,
         }
         if room is not None:
-            max_room_b = int(self.limits.get(B_LIMIT_MAX_ROOM_NAME_BYTES, DEFAULT_LIMITS[B_LIMIT_MAX_ROOM_NAME_BYTES]))
+            max_room_b = int(
+                self.limits.get(
+                    B_LIMIT_MAX_ROOM_NAME_BYTES,
+                    DEFAULT_LIMITS[B_LIMIT_MAX_ROOM_NAME_BYTES],
+                )
+            )
             env[K_ROOM] = _truncate_utf8(room.strip().lower(), max_room_b)
         if body is not None:
             if msg_type in (T_MSG, T_ACTION) and isinstance(body, str):
-                max_body_b = int(self.limits.get(B_LIMIT_MAX_MSG_BODY_BYTES, DEFAULT_LIMITS[B_LIMIT_MAX_MSG_BODY_BYTES]))
+                max_body_b = int(
+                    self.limits.get(
+                        B_LIMIT_MAX_MSG_BODY_BYTES,
+                        DEFAULT_LIMITS[B_LIMIT_MAX_MSG_BODY_BYTES],
+                    )
+                )
                 body = _truncate_utf8(body, max_body_b)
             env[K_BODY] = body
         if self.nick:
-            max_nick_b = int(self.limits.get(B_LIMIT_MAX_NICK_BYTES, DEFAULT_LIMITS[B_LIMIT_MAX_NICK_BYTES]))
+            max_nick_b = int(
+                self.limits.get(
+                    B_LIMIT_MAX_NICK_BYTES, DEFAULT_LIMITS[B_LIMIT_MAX_NICK_BYTES]
+                )
+            )
             nick_clean = _truncate_utf8(str(self.nick).strip(), max_nick_b)
             if nick_clean:
                 env[K_NICK] = nick_clean
@@ -1615,7 +1806,10 @@ class RRCClient:
             tries += 1
 
         if len(payload) > self.link.mdu:
-            print("[RRC] Outgoing type %s too large (%dB > %dB mdu), dropped" % (msg_type, len(payload), self.link.mdu))
+            print(
+                "[RRC] Outgoing type %s too large (%dB > %dB mdu), dropped"
+                % (msg_type, len(payload), self.link.mdu)
+            )
             return False
 
         try:
@@ -1683,8 +1877,13 @@ class RRCClient:
                 print("      hub_version=" + str(body.get(B_WELCOME_VER, "?")))
                 if B_WELCOME_CAPS in body and isinstance(body[B_WELCOME_CAPS], dict):
                     self.hub_caps = dict(body[B_WELCOME_CAPS])
-                    print("      capabilities=" + _describe_named(self.hub_caps, CAP_NAMES))
-                if B_WELCOME_LIMITS in body and isinstance(body[B_WELCOME_LIMITS], dict):
+                    print(
+                        "      capabilities="
+                        + _describe_named(self.hub_caps, CAP_NAMES)
+                    )
+                if B_WELCOME_LIMITS in body and isinstance(
+                    body[B_WELCOME_LIMITS], dict
+                ):
                     for k, v in body[B_WELCOME_LIMITS].items():
                         if _is_int(k) and _is_int(v) and v > 0:
                             self.limits[k] = v
@@ -1714,7 +1913,9 @@ class RRCClient:
                 print("      known_members=%d" % len(self.members))
                 self.update_oled(force=True)
             else:
-                print("[RRC] MEMBER JOINED room=%s nick=%s%s" % (room, nick or "?", meta))
+                print(
+                    "[RRC] MEMBER JOINED room=%s nick=%s%s" % (room, nick or "?", meta)
+                )
                 if hashes:
                     for item in hashes:
                         self.members[item] = {"nick": nick, "seen": now}
@@ -1749,7 +1950,10 @@ class RRCClient:
             elif nick:
                 self.members[src]["nick"] = nick
 
-            print("[RRC] MSG room=%s <%s> %s%s" % (room, sender, _short(content, 300), meta))
+            print(
+                "[RRC] MSG room=%s <%s> %s%s"
+                % (room, sender, _short(content, 300), meta)
+            )
 
             if mid in self.sent_ids:
                 self.sent_ids.remove(mid)
@@ -1768,24 +1972,36 @@ class RRCClient:
             if reply is not None:
                 self.cmds_handled += 1
                 target_room = room or self.room
-                print("[BOT] Command from %s in %s: %s" % (sender, target_room, _short(content, 80)))
+                print(
+                    "[BOT] Command from %s in %s: %s"
+                    % (sender, target_room, _short(content, 80))
+                )
                 self.queue_text(T_MSG, target_room, reply)
             self.update_oled(force=True)
 
         elif msg_type == T_NOTICE:
             content = _body_text(body)
-            scope = ("room=" + str(room)) if room else (("dst=" + _hex(dst)) if dst else "hub")
+            scope = (
+                ("room=" + str(room))
+                if room
+                else (("dst=" + _hex(dst)) if dst else "hub")
+            )
             print("[RRC] NOTICE %s %s%s" % (scope, _short(content, 400), meta))
 
         elif msg_type == T_ACTION:
             if src not in self.members:
                 self.members[src] = {"nick": nick, "seen": now}
-            print("[RRC] ACTION room=%s %s%s" % (room, _short(_body_text(body), 400), meta))
+            print(
+                "[RRC] ACTION room=%s %s%s"
+                % (room, _short(_body_text(body), 400), meta)
+            )
 
         elif msg_type == T_PING:
             if DEBUG >= 2:
                 print("[RRC] PING" + meta)
-            self.tx_queue.insert(0, (T_PONG, None, body if K_BODY in env else None, None))
+            self.tx_queue.insert(
+                0, (T_PONG, None, body if K_BODY in env else None, None)
+            )
 
         elif msg_type == T_PONG:
             if DEBUG >= 2:
@@ -1809,11 +2025,17 @@ class RRCClient:
 
         else:
             if DEBUG >= 1:
-                print("[RRC] Unhandled type=%s room=%s%s body=%s" % (msg_type, room, meta, _describe(body)))
+                print(
+                    "[RRC] Unhandled type=%s room=%s%s body=%s"
+                    % (msg_type, room, meta, _describe(body))
+                )
 
     def _handle_resource_envelope(self, room, body, meta):
         if not isinstance(body, dict):
-            print("[RRC] RESOURCE ENVELOPE malformed room=%s%s body=%s" % (room, meta, _describe(body)))
+            print(
+                "[RRC] RESOURCE ENVELOPE malformed room=%s%s body=%s"
+                % (room, meta, _describe(body))
+            )
             return
         res_id = body.get(B_RES_ID)
         res_kind = body.get(B_RES_KIND)
@@ -1821,7 +2043,12 @@ class RRCClient:
         res_sha = body.get(B_RES_SHA256)
         res_enc = body.get(B_RES_ENCODING)
 
-        if not (isinstance(res_id, (bytes, bytearray)) and isinstance(res_kind, str) and _is_int(res_size) and res_size >= 0):
+        if not (
+            isinstance(res_id, (bytes, bytearray))
+            and isinstance(res_kind, str)
+            and _is_int(res_size)
+            and res_size >= 0
+        ):
             print("[RRC] RESOURCE ENVELOPE invalid fields: " + _describe(body))
             return
 
@@ -1829,27 +2056,36 @@ class RRCClient:
             "id": bytes(res_id),
             "kind": res_kind,
             "size": res_size,
-            "sha256": bytes(res_sha) if isinstance(res_sha, (bytes, bytearray)) else None,
+            "sha256": bytes(res_sha)
+            if isinstance(res_sha, (bytes, bytearray))
+            else None,
             "encoding": res_enc if isinstance(res_enc, str) else "utf-8",
             "room": room,
             "at": time.time(),
         }
         self.pending_resource = info
         print("[RRC] RESOURCE EXPECTED room=%s%s" % (room, meta))
-        print("      id=%s kind=%s size=%s encoding=%s" % (_hex(info["id"]), info["kind"], info["size"], info["encoding"]))
+        print(
+            "      id=%s kind=%s size=%s encoding=%s"
+            % (_hex(info["id"]), info["kind"], info["size"], info["encoding"])
+        )
         print("      sha256=" + _hex(info["sha256"]))
 
     def _on_resource(self, resource):
         self.last_rx_at = time.time()
         status = getattr(resource, "status", None)
         data = getattr(resource, "data", b"") or b""
-        print("[RRC] RESOURCE CONCLUDED status=%s size=%d hash=%s" % (status, len(data), _hex(getattr(resource, "hash", b""))))
+        print(
+            "[RRC] RESOURCE CONCLUDED status=%s size=%d hash=%s"
+            % (status, len(data), _hex(getattr(resource, "hash", b"")))
+        )
 
         info = self.pending_resource
         self.pending_resource = None
 
         try:
             from urns.resource import COMPLETE
+
             complete = status == COMPLETE
         except Exception:
             complete = status == 5
@@ -1863,22 +2099,35 @@ class RRCClient:
             encoding = info.get("encoding") or "utf-8"
             exp_size = info.get("size")
             exp_sha = info.get("sha256")
-            print("      kind=%s expected_size=%s room=%s sha256=%s" % (kind, exp_size, info.get("room"), _hex(exp_sha)))
+            print(
+                "      kind=%s expected_size=%s room=%s sha256=%s"
+                % (kind, exp_size, info.get("room"), _hex(exp_sha))
+            )
             if _is_int(exp_size) and len(data) != exp_size:
-                print("      warning: resource size mismatch (%d != %d)" % (len(data), exp_size))
+                print(
+                    "      warning: resource size mismatch (%d != %d)"
+                    % (len(data), exp_size)
+                )
                 return
             if exp_sha is not None:
                 try:
                     from urns.crypto.hashes import sha256
+
                     actual_sha = sha256(data)
                     if actual_sha != exp_sha:
-                        print("      warning: resource sha256 mismatch (%s != %s)" % (_hex(actual_sha), _hex(exp_sha)))
+                        print(
+                            "      warning: resource sha256 mismatch (%s != %s)"
+                            % (_hex(actual_sha), _hex(exp_sha))
+                        )
                         return
                 except Exception:
                     pass
             if kind in ("notice", "motd", "blob"):
                 try:
-                    print("[RRC] RESOURCE TEXT room=%s: %s" % (info.get("room"), _short(data.decode(encoding), 800)))
+                    print(
+                        "[RRC] RESOURCE TEXT room=%s: %s"
+                        % (info.get("room"), _short(data.decode(encoding), 800))
+                    )
                     return
                 except Exception as e:
                     print("      text decode failed: " + str(e))
@@ -1924,6 +2173,7 @@ def connect_wifi(ssid, password, timeout=15):
 
     try:
         import ntptime
+
         ntptime.settime()
         if DEBUG >= 1:
             print("NTP synced")
@@ -1946,7 +2196,12 @@ def needs_wifi(config):
 
 def main():
     init_oled()
-    oled_boot("Starting...", "Nick:" + str(RRC_NICK)[:11], "Rm:" + ROOM_NAME[:13], "Init config...")
+    oled_boot(
+        "Starting...",
+        "Nick:" + str(RRC_NICK)[:11],
+        "Rm:" + ROOM_NAME[:13],
+        "Init config...",
+    )
 
     try:
         hub_hash = _hub_hash_bytes()
@@ -1976,7 +2231,9 @@ def main():
     rns.config = CONFIG
     gc.collect()
 
-    oled_boot("Setup Radio", "Init LoRa SX1262", "ID:" + _short_addr(rns.identity.hexhash))
+    oled_boot(
+        "Setup Radio", "Init LoRa SX1262", "ID:" + _short_addr(rns.identity.hexhash)
+    )
     rns.setup_interfaces()
     gc.collect()
 
