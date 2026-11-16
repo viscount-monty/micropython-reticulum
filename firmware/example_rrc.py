@@ -390,6 +390,11 @@ def init_oled():
         return None
 
 
+def _short_addr(hex_str):
+    s = str(hex_str)
+    return s if len(s) <= 10 else (s[:4] + ".." + s[-4:])
+
+
 def oled_show_lines(lines):
     if _oled is None:
         return
@@ -403,15 +408,26 @@ def oled_show_lines(lines):
         pass
 
 
-def oled_boot(stage, line1="", line2="", line3=""):
-    oled_show_lines([
-        "RRC Bot Boot",
-        "----------------",
-        stage,
-        line1,
-        line2,
-        line3,
-    ])
+def oled_boot(stage, line1="", line2="", line3="", line4=""):
+    if _oled is None:
+        return
+    try:
+        _oled.fill(0)
+        _oled.text("RRC Bot v" + CLIENT_VERSION, 0, 0)
+        _oled.hline(0, 9, 128, 1)
+        _oled.text(str(stage)[:16], 0, 12)
+        if line1:
+            _oled.text(str(line1)[:16], 0, 22)
+        if line2:
+            _oled.text(str(line2)[:16], 0, 31)
+        if line3:
+            _oled.text(str(line3)[:16], 0, 40)
+        _oled.hline(0, 50, 128, 1)
+        footer = line4 or ("Hub:" + _short_addr(HUB_DEST_HASH))
+        _oled.text(str(footer)[:16], 0, 54)
+        _oled.show()
+    except Exception:
+        pass
 
 
 # ---- Minimal CBOR (RRC uses CBOR maps per RFC 8949, not msgpack) ----
@@ -818,9 +834,9 @@ class RRCClient:
             _oled.text(tx_rx_b[:16], 0, 24)
             _oled.hline(0, 33, 128, 1)
             _oled.text(hdr[:16], 0, 36)
-            _oled.text(msg1, 0, 46)
+            _oled.text(msg1[:16], 0, 46)
             if msg2:
-                _oled.text(msg2, 0, 55)
+                _oled.text(msg2[:16], 0, 56)
             _oled.show()
         except Exception:
             pass
@@ -1367,7 +1383,12 @@ class RRCClient:
                 link.set_resource_concluded_callback(self._on_resource)
             else:
                 link.resource_concluded_callback = self._on_resource
-            oled_boot("Link ACTIVE", "rtt=%dms hops=%s" % (int((link.rtt or 0) * 1000), getattr(link, "expected_hops", "?")), "Sending IDENTIFY")
+            oled_boot(
+                "Link ACTIVE",
+                "RTT:%dms Hops:%s" % (int((link.rtt or 0) * 1000), getattr(link, "expected_hops", "?")),
+                "ID:" + _short_addr(self.identity.hexhash),
+                "Send IDENTIFY..",
+            )
 
         def on_closed(link):
             self.closed = True
@@ -1393,7 +1414,12 @@ class RRCClient:
             closed_callback=on_closed,
         )
         print("[RRC] Link request sent")
-        oled_boot("Link requested", "Hub:" + self.hub_hash.hex()[:12], "Waiting proof...")
+        oled_boot(
+            "Link requested",
+            "Hub:" + _short_addr(self.hub_hash.hex()),
+            "Rm:" + self.room[:13],
+            "Waiting proof..",
+        )
 
         while not self.closed:
             await asyncio.sleep(0.25)
@@ -1482,14 +1508,29 @@ class RRCClient:
                 if identity is not None:
                     hops = Transport.hops_to(self.hub_hash)
                     print("[RRC] Path to hub: hops=" + str(hops))
-                    oled_boot("Hub path found", "Hops: " + str(hops), "Opening link...")
+                    oled_boot(
+                        "Hub path found",
+                        "Hops: " + str(hops),
+                        "Hub:" + _short_addr(self.hub_hash.hex()),
+                        "Opening link...",
+                    )
                     return identity
                 if time.time() - last_request >= 10:
                     print("[RRC] Path known, waiting for hub identity/announce")
-                    oled_boot("Path known", "Wait announce...", "Hub:" + self.hub_hash.hex()[:12])
+                    oled_boot(
+                        "Path known",
+                        "Wait announce..",
+                        "Hub:" + _short_addr(self.hub_hash.hex()),
+                        "Rm:" + self.room[:13],
+                    )
             if time.time() - last_request >= 15:
                 print("[RRC] Requesting path to hub " + self.hub_hash.hex())
-                oled_boot("Requesting path", "Hub:" + self.hub_hash.hex()[:12], "Sess:" + str(self.session_no))
+                oled_boot(
+                    "Requesting path",
+                    "Hub:" + _short_addr(self.hub_hash.hex()),
+                    "Rm:" + self.room[:13],
+                    "Session: " + str(self.session_no),
+                )
                 try:
                     Transport.request_path(self.hub_hash)
                 except Exception as e:
@@ -1905,7 +1946,7 @@ def needs_wifi(config):
 
 def main():
     init_oled()
-    oled_boot("Starting...", "Nick:" + str(RRC_NICK)[:11], "Room:" + ROOM_NAME[:11])
+    oled_boot("Starting...", "Nick:" + str(RRC_NICK)[:11], "Rm:" + ROOM_NAME[:13], "Init config...")
 
     try:
         hub_hash = _hub_hash_bytes()
@@ -1922,11 +1963,11 @@ def main():
         return
 
     if needs_wifi(CONFIG):
-        oled_boot("Connecting WiFi", str(WIFI_SSID)[:16])
+        oled_boot("Connecting WiFi", str(WIFI_SSID)[:16], "Rm:" + ROOM_NAME[:13])
         connect_wifi(WIFI_SSID, WIFI_PASS)
     gc.collect()
 
-    oled_boot("Init Reticulum", "Loading keys...")
+    oled_boot("Init Reticulum", "Loading keys...", "Rm:" + ROOM_NAME[:13])
     from urns import Reticulum
     from urns.log import LOG_NONE, LOG_NOTICE, LOG_DEBUG
 
@@ -1935,7 +1976,7 @@ def main():
     rns.config = CONFIG
     gc.collect()
 
-    oled_boot("Setup Interfaces", "Init LoRa SX1262")
+    oled_boot("Setup Radio", "Init LoRa SX1262", "ID:" + _short_addr(rns.identity.hexhash))
     rns.setup_interfaces()
     gc.collect()
 
@@ -1948,7 +1989,12 @@ def main():
     print("[RRC] Bot prefix: " + BOT_PREFIX)
     if hasattr(gc, "mem_free"):
         print("[RRC] Free memory:", gc.mem_free(), "bytes")
-    oled_boot("RRC Ready", "ID:" + rns.identity.hexhash[:13], "Room:" + client.room[:11])
+    oled_boot(
+        "RRC Ready",
+        "ID:" + _short_addr(rns.identity.hexhash),
+        "Rm:" + client.room[:13],
+        "Hub:" + _short_addr(hub_hash.hex()),
+    )
 
     async def runner():
         asyncio.create_task(client.run())
